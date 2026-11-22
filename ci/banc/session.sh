@@ -5,9 +5,11 @@ export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=KDE XDG_SESSION_DESKTOP=KDE 
 export LIBGL_ALWAYS_SOFTWARE=1  # pas de carte graphique sur GitHub : rendu OpenGL par le processeur (llvmpipe)
 export QT_FORCE_STDERR_LOGGING=1 KWIN_SCREENSHOT_NO_PERMISSION_CHECKS=1
 dire() { echo "[banc] $*"; }
-photo() {  # photo de tout l'écran par Spectacle (l'outil de capture de KDE)
-  timeout 30 spectacle -b -n -f -o "/sortie/$1.png" >/tmp/spectacle.log 2>&1
-  [ -s "/sortie/$1.png" ] || { dire "photo $1 ratée :"; grep -v '^$' /tmp/spectacle.log | tail -5; }
+photo() {  # photo de tout l'écran, demandée à KWin ; Spectacle (l'outil de capture de KDE) en secours
+  timeout 30 python3 /banc/capture.py "/sortie/$1.png" >/tmp/capture.log 2>&1 \
+    || timeout 30 spectacle -b -n -f -o "/sortie/$1.png" >>/tmp/capture.log 2>&1
+  if [ -s "/sortie/$1.png" ]; then dire "photo $1 : $(stat -c %s "/sortie/$1.png") octets, $(tail -1 /tmp/capture.log)"
+  else dire "photo $1 ratée :"; grep -v '^$' /tmp/capture.log | tail -6; fi
 }
 pret() { gdbus introspect --session --dest "$1" --object-path "$2" >/dev/null 2>&1; }
 placer() {  # place la fenêtre Dolphin comme dans la maquette (script KWin)
@@ -45,7 +47,10 @@ plasma() {  # $1 = délai d'attente
 }
 plasma 90 || { export QT_QUICK_BACKEND=software; plasma 90; } || exit 1
 sleep 12
+dire "processus : $(pgrep -l -f 'plasmashell|kded6|kactivitymanagerd' | tr '\n' ' ')"
 photo "00-demarrage"
+timeout 30 spectacle -b -n -f -o /sortie/00-spectacle.png >/tmp/spectacle.log 2>&1
+dire "Spectacle : $(stat -c %s /sortie/00-spectacle.png 2>/dev/null || echo 'rien') octets $(grep -v '^$' /tmp/spectacle.log | tail -2 | tr '\n' ' ')"
 
 for f in /usr/share/thomas-os/styles/*.conf; do
   pgrep -x kwin_wayland >/dev/null || break
