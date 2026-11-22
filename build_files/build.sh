@@ -52,10 +52,15 @@ EOF
 CLAUDE_KEY_FPR="31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
 command -v gpg >/dev/null || dnf5 install -y gnupg2
 curl --retry 3 -fsSL https://downloads.claude.ai/keys/claude-code.asc -o /tmp/claude-code.asc
+# Pendant le build, /root n'existe pas : gpg travaille dans un dossier temporaire
+GNUPGHOME="$(mktemp -d)"
+export GNUPGHOME
 gpg --show-keys --with-colons /tmp/claude-code.asc | grep '^fpr:' | cut -d: -f10 | grep -qx "${CLAUDE_KEY_FPR}" || {
     echo "ERREUR : la clé de signature Claude Code n'a pas l'empreinte attendue"
     exit 1
 }
+rm -rf "${GNUPGHOME}"
+unset GNUPGHOME
 install -D -m 0644 /tmp/claude-code.asc /etc/pki/rpm-gpg/RPM-GPG-KEY-claude-code
 cat >/etc/yum.repos.d/claude-code.repo <<'EOF'
 [claude-code]
