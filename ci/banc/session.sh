@@ -38,6 +38,10 @@ gdbus call --session --dest org.kde.KWin --object-path /KWin --method org.kde.KW
   | sed 's/\\n/\n/g' | grep -E "KWin version|Compositing Type|OpenGL renderer string|OpenGL version string" | sed 's/^/[banc] /'
 dire "journal KWin :"; grep -v '^$' /tmp/kwin.log | tail -8
 
+# Plasma ne crée le bureau qu'une fois les « activités » KDE lancées (dans une vraie session, systemd s'en charge)
+for d in /usr/libexec/kactivitymanagerd /usr/bin/kded6; do [ -x "$d" ] && { "$d" >/tmp/$(basename "$d").log 2>&1 & }; done
+for _ in $(seq 20); do pret org.kde.ActivityManager /ActivityManager && break; sleep 1; done
+dire "activités KDE : $(pret org.kde.ActivityManager /ActivityManager && echo prêtes || echo 'ABSENTES')"
 plasma() {  # $1 = délai d'attente
   plasmashell --no-respawn >/tmp/plasma.log 2>&1 &
   for _ in $(seq "$1"); do pret org.kde.plasmashell /PlasmaShell && return 0; pgrep -x plasmashell >/dev/null || break; sleep 1; done
@@ -48,6 +52,7 @@ plasma() {  # $1 = délai d'attente
 plasma 90 || { export QT_QUICK_BACKEND=software; plasma 90; } || exit 1
 sleep 12
 dire "processus : $(pgrep -l -f 'plasmashell|kded6|kactivitymanagerd' | tr '\n' ' ')"
+dire "journal Plasma :"; grep -v '^$' /tmp/plasma.log | grep -viE 'portal|dbus-daemon' | tail -12
 echo 'workspace.windowList().forEach(function (w) { print("FENETRE " + w.resourceClass + " | " + w.caption + " | " + w.frameGeometry.width + "x" + w.frameGeometry.height + " | bureau=" + w.desktopWindow + " | visible=" + !w.hidden); });' > /tmp/liste.js
 n="$(gdbus call --session --dest org.kde.KWin --object-path /Scripting --method org.kde.kwin.Scripting.loadScript /tmp/liste.js liste | grep -oE '[0-9]+' | head -1)"
 gdbus call --session --dest org.kde.KWin --object-path "/Scripting/Script${n}" --method org.kde.kwin.Script.run >/dev/null 2>&1
