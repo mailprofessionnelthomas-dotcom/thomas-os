@@ -4,9 +4,13 @@
 
 set -euxo pipefail
 
-: "${BASE_IMAGE:?}" "${IMAGE_NAME:?}" "${IMAGE_VENDOR:?}" "${IMAGE_TAG:?}" "${GPU_VARIANT:?}"
+: "${BASE_IMAGE:?}" "${IMAGE_NAME:?}" "${IMAGE_VENDOR:?}" "${IMAGE_VERSION:?}" "${GPU_VARIANT:?}"
 
 IMAGE_REF="ghcr.io/${IMAGE_VENDOR}/${IMAGE_NAME}"
+# Canal par défaut des PC installés depuis la clé USB. Le PC de Thomas passe sur "testing".
+# La même image passe de "testing" à "stable" sans être reconstruite : on n'écrit donc
+# pas le canal réel ici, on le lit au démarrage avec "bootc status".
+DEFAULT_CHANNEL="stable"
 REPO_URL="https://github.com/${IMAGE_VENDOR}/thomas-os"
 
 # 1. Fichiers maison (system_files/ du repo -> / de l'image)
@@ -36,7 +40,7 @@ if [[ -f "${IMAGE_INFO}" ]]; then
         --arg name "${IMAGE_NAME}" \
         --arg vendor "${IMAGE_VENDOR}" \
         --arg ref "ostree-unverified-registry:docker://${IMAGE_REF}" \
-        --arg tag "${IMAGE_TAG}" \
+        --arg tag "${DEFAULT_CHANNEL}" \
         '. + {"image-name": $name, "image-vendor": $vendor, "image-ref": $ref, "image-tag": $tag}' \
         "${IMAGE_INFO}" >"${tmp}"
     install -m 0644 "${tmp}" "${IMAGE_INFO}"
@@ -49,7 +53,8 @@ install -d /usr/share/thomas-os
 cat >/usr/share/thomas-os/info.env <<EOF
 THOMAS_OS_IMAGE_NAME=${IMAGE_NAME}
 THOMAS_OS_IMAGE_REF=${IMAGE_REF}
-THOMAS_OS_IMAGE_TAG=${IMAGE_TAG}
+THOMAS_OS_VERSION=${IMAGE_VERSION}
+THOMAS_OS_DEFAULT_CHANNEL=${DEFAULT_CHANNEL}
 THOMAS_OS_GPU_VARIANT=${GPU_VARIANT}
 THOMAS_OS_BASE_IMAGE=${BASE_IMAGE}
 THOMAS_OS_BUILD_DATE=$(date -u +%Y-%m-%d)

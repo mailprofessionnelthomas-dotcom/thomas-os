@@ -1,0 +1,91 @@
+---
+# Bouton manuel : passe une version sur le canal "stable" (tous les PC sauf celui de Thomas).
+#
+#  - Valider       : laisse « version » sur testing  -> la version en test devient stable
+#  - Revenir avant : mets « stable-precedent »       -> annule le dernier passage en stable
+#                    ou un numéro (ex. 20261122.5)    -> remet exactement cette version
+#
+# Rien n'est reconstruit : la même image déjà testée (même empreinte, même signature) change juste d'étiquette.
+name: Passer en stable
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Quelle version mettre en stable ? testing = la version en test (valider) ; stable-precedent = annuler le dernier passage ; ou un numéro comme 20261122.5"
+        required: true
+        default: testing
+        type: string
+
+concurrency:
+  group: promote-stable
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Passer en stable
+    runs-on: ubuntu-26.04
+    permissions:
+      packages: write
+    env:
+      SOURCE: ${{ inputs.version }}
+      IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
+    steps:
+      - name: Vérifier la version demandée
+        run: |
+          set -euo pipefail
+          if [[ ! "${SOURCE}" =~ ^(testing|stable-precedent|[0-9]{8}\.[0-9]+)$ ]]; then
+            echo "::error::Version invalide : « ${SOURCE} ». Mets testing, stable-precedent ou un numéro comme 20261122.5"
+            exit 1
+          fi
+
+      - name: Copier la version sur stable (3 variantes)
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          command -v skopeo >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
+          REGISTRY="${IMAGE_REGISTRY,,}"
+          IMAGES="thomas-os thomas-os-nvidia thomas-os-nvidia-legacy"
+          echo "${GH_TOKEN}" | skopeo login ghcr.io -u "${GH_ACTOR}" --password-stdin
+
+          # 1. On lit TOUTES les empreintes avant de toucher à quoi que ce soit (tout ou rien)
+          declare -A NEW OLD
+          for img in ${IMAGES}; do
+            NEW[$img]="$(skopeo inspect --format '{{.Digest}}' "docker://${REGISTRY}/${img}:${SOURCE}")" || {
+              echo "::error::${img}:${SOURCE} introuvable. Rien n'a été modifié."
+              exit 1
+            }
+            OLD[$img]="$(skopeo inspect --format '{{.Digest}}' "docker://${REGISTRY}/${img}:stable" 2>/dev/null || true)"
+          done
+
+          {
+            echo "## « ${SOURCE} » est maintenant sur le canal **stable**"
+            echo ""
+            echo "| Image | Ancienne stable | Nouvelle stable |"
+            echo "|---|---|---|"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          # 2. On garde l'ancienne stable sous « stable-precedent », puis on met la nouvelle
+          for img in ${IMAGES}; do
+            if [[ -n "${OLD[$img]}" && "${OLD[$img]}" != "${NEW[$img]}" ]]; then
+              skopeo copy --all --preserve-digests \
+                "docker://${REGISTRY}/${img}@${OLD[$img]}" \
+                "docker://${REGISTRY}/${img}:stable-precedent"
+            fi
+            skopeo copy --all --preserve-digests \
+              "docker://${REGISTRY}/${img}@${NEW[$img]}" \
+              "docker://${REGISTRY}/${img}:stable"
+            echo "| ${img} | \`${OLD[$img]:-aucune}\` | \`${NEW[$img]}\` |" >> "${GITHUB_STEP_SUMMARY}"
+          done
+
+      - name: Dernières versions disponibles
+        run: |
+          set -euo pipefail
+          REGISTRY="${IMAGE_REGISTRY,,}"
+          {
+            echo ""
+            echo "### 10 dernières versions (pour revenir en arrière, mets un de ces numéros)"
+            skopeo list-tags "docker://${REGISTRY}/thomas-os" \
+              | jq -r '.Tags[]' | grep -E '^[0-9]{8}\.[0-9]+$' | sort -t. -k1,1n -k2,2n | tail -10 | sed 's/^/- /'
+          } >> "${GITHUB_STEP_SUMMARY}"

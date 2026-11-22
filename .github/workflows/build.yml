@@ -1,6 +1,12 @@
 ---
-# Construit les 3 variantes de Thomas OS et les publie sur ghcr.io
-# (c'est là que les PC installés vont chercher leurs mises à jour).
+# Construit les 3 variantes de Thomas OS et les publie sur ghcr.io.
+#
+# Chemin d'une mise à jour :
+#   1. build      : construit les 3 images, chacune publiée sous un numéro de version unique (ex. 20261122.5)
+#   2. (étape 7)  : simulations en machine virtuelle sur cette version
+#   3. testing    : si tout est vert, la version devient "testing" (le canal du PC de Thomas)
+#   4. stable     : UNIQUEMENT à la main, avec le workflow "Passer en stable" (promote-stable.yml)
+# Ce workflow ne touche JAMAIS au canal "stable".
 name: Build container image
 on:
   pull_request:
@@ -25,8 +31,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  prepare:
+    name: Numéro de version
+    runs-on: ubuntu-26.04
+    permissions: {}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Version = date + numéro du build
+        id: version
+        run: |
+          VERSION="$(date -u +%Y%m%d).${{ github.run_number }}"
+          echo "Version : ${VERSION}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
   build_push:
     name: Build ${{ matrix.image_name }}
+    needs: prepare
     runs-on: ubuntu-26.04
 
     permissions:
@@ -34,11 +55,15 @@ jobs:
       packages: write
       id-token: write
 
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      LOCAL_TAG: candidate
+
     strategy:
       fail-fast: false
       matrix:
         include:
-          # AMD (Radeon), Intel (iGPU, Arc) et vieilles NVIDIA (GTX 700 et avant, pilote libre nouveau)
+          # AMD (Radeon), Intel (iGPU, Arc) et très vieilles NVIDIA (pilote libre nouveau)
           - image_name: thomas-os
             base_image: ghcr.io/ublue-os/bazzite:stable
             gpu: amd-intel
@@ -46,7 +71,7 @@ jobs:
           - image_name: thomas-os-nvidia
             base_image: ghcr.io/ublue-os/bazzite-nvidia-open:stable
             gpu: nvidia
-          # NVIDIA anciennes : GTX 900, GTX 1000, Titan V (pilote NVIDIA LTS)
+          # NVIDIA anciennes : GTX 750 Ti, GTX 900, GTX 1000, Titan V (pilote NVIDIA LTS)
           - image_name: thomas-os-nvidia-legacy
             base_image: ghcr.io/ublue-os/bazzite-nvidia:stable
             gpu: nvidia-legacy
@@ -72,7 +97,6 @@ jobs:
           # Lowercase the image uri https://github.com/macbre/push-to-ghcr/issues/12
           echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
           echo "IMAGE_NAME=${{ matrix.image_name }}" >> ${GITHUB_ENV}
-          echo "DEFAULT_TAG=$(just generate-default-tag)" >> ${GITHUB_ENV}
 
       # This actually builds the container image
       - name: Build Image
@@ -80,9 +104,10 @@ jobs:
         run: |
           just build \
             "${IMAGE_NAME}" \
-            "${DEFAULT_TAG}" \
+            "${LOCAL_TAG}" \
             "${{ matrix.base_image }}" \
-            "${{ matrix.gpu }}"
+            "${{ matrix.gpu }}" \
+            "${VERSION}"
 
       # Découpe l'image en morceaux : mises à jour plus petites à télécharger
       - name: Rechunk with rpm-ostree
@@ -90,39 +115,20 @@ jobs:
         run: |
           just ostree-rechunk \
             "${IMAGE_NAME}" \
-            "${DEFAULT_TAG}"
-
-      - name: Generate Build Tags
-        id: gen-build-tags
-        run: |
-          alias_tags="$(just generate-build-tags \
-                        ${IMAGE_NAME} \
-                        ${DEFAULT_TAG})"
-
-          echo "Tags for this Action..."
-          echo "${alias_tags}"
-          echo "alias_tags=${alias_tags}" >> $GITHUB_OUTPUT
-
-      - name: Tag Image
-        id: tag-images
-        env:
-          ALIAS_TAGS: ${{ steps.gen-build-tags.outputs.alias_tags }}
-        run: |
-          just tag-images \
-            "${IMAGE_NAME}" \
-            "${DEFAULT_TAG}" \
-            "${ALIAS_TAGS}"
+            "${LOCAL_TAG}"
 
       # Vérifie dans l'image construite que c'est bien Thomas OS, avec la bonne variante
       - name: Check image content
         run: |
           set -euxo pipefail
-          podman run --rm --entrypoint /usr/bin/bash "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" -c '
+          podman run --rm --entrypoint /usr/bin/bash "localhost/${IMAGE_NAME}:${LOCAL_TAG}" -c '
             set -euxo pipefail
             grep "^NAME=\"Thomas OS\"" /usr/lib/os-release
             grep "^THOMAS_OS_GPU_VARIANT=${{ matrix.gpu }}$" /usr/share/thomas-os/info.env
             grep "^THOMAS_OS_IMAGE_NAME=${{ matrix.image_name }}$" /usr/share/thomas-os/info.env
+            grep "^THOMAS_OS_VERSION=${{ env.VERSION }}$" /usr/share/thomas-os/info.env
             jq -e ".\"image-name\" == \"${{ matrix.image_name }}\"" /usr/share/ublue-os/image-info.json
+            jq -e ".\"image-tag\" == \"stable\"" /usr/share/ublue-os/image-info.json
           '
 
       # Pull requests never publish anything
@@ -134,23 +140,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Publie la version sous son numéro unique uniquement (ni "testing" ni "stable")
       - name: Push To GHCR
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         id: push-image
-        env:
-          ALIAS_TAGS: ${{ steps.gen-build-tags.outputs.alias_tags }}
         run: |
           set -euox pipefail
-          for tag in ${ALIAS_TAGS}; do
-            podman push --digestfile=/tmp/digestfile ${IMAGE_NAME}:${tag} ${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}
-          done
-
+          podman tag "localhost/${IMAGE_NAME}:${LOCAL_TAG}" "localhost/${IMAGE_NAME}:${VERSION}"
+          podman push --digestfile=/tmp/digestfile "localhost/${IMAGE_NAME}:${VERSION}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${VERSION}"
           digest=$(< /tmp/digestfile)
-
           echo "digest=${digest}" >> $GITHUB_OUTPUT
 
       # Signature "keyless" (Sigstore) : prouve que l'image vient bien de ce repo GitHub,
-      # sans clé secrète à créer ni à garder.
+      # sans clé secrète à créer ni à garder. La signature suit l'image quand elle change de canal.
       - name: Install Cosign
         uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
@@ -168,3 +170,42 @@ jobs:
           # https://github.com/coreos/rpm-ostree/issues/5509
           # use old bundle format, so we can use newer cosign 3.X.X instead of 2.X.X
           cosign sign -y --new-bundle-format=false --use-signing-config=false ${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}
+
+  # Étape 7 : le job "simulations" (machine virtuelle) viendra ici, entre build_push et publish_testing.
+
+  publish_testing:
+    name: Publier sur le canal test
+    needs: [prepare, build_push]
+    if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-26.04
+    permissions:
+      packages: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      # Tout ou rien : ce job ne tourne que si les 3 variantes ont réussi.
+      # La même image (même empreinte, même signature) reçoit l'étiquette "testing", sans reconstruction.
+      - name: Version -> testing (3 variantes)
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          command -v skopeo >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
+          REGISTRY="${IMAGE_REGISTRY,,}"
+          echo "${GH_TOKEN}" | skopeo login ghcr.io -u "${GH_ACTOR}" --password-stdin
+          {
+            echo "## Version ${VERSION} publiée sur le canal **test**"
+            echo ""
+            echo "| Image | Empreinte |"
+            echo "|---|---|"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          for img in thomas-os thomas-os-nvidia thomas-os-nvidia-legacy; do
+            digest="$(skopeo inspect --format '{{.Digest}}' "docker://${REGISTRY}/${img}:${VERSION}")"
+            skopeo copy --all --preserve-digests \
+              "docker://${REGISTRY}/${img}@${digest}" \
+              "docker://${REGISTRY}/${img}:testing"
+            echo "| ${img} | \`${digest}\` |" >> "${GITHUB_STEP_SUMMARY}"
+          done
+          echo "" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Pour la passer en **stable** : onglet Actions → « Passer en stable » → Run workflow." >> "${GITHUB_STEP_SUMMARY}"

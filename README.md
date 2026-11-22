@@ -22,11 +22,24 @@ Comment connaître ta carte sous Windows : `Ctrl + Maj + Échap` → onglet **Pe
 
 **Pas compatible :** Mac Apple Silicon (M1, M2…), PC à processeur ARM (Snapdragon), PC 32 bits.
 
+## Mises à jour : 2 canaux
+
+| Canal | Qui | Ce qu'il reçoit |
+|---|---|---|
+| `testing` | le PC de Thomas | chaque nouvelle version qui a passé les vérifications (et les simulations en VM, bientôt) |
+| `stable` | tous les autres PC (c'est le canal installé par la clé USB) | seulement les versions que Thomas a validées |
+
+1. **Une nouvelle version** arrive toute seule (mise à jour de Bazzite, tous les jours) ou après une modification du repo : GitHub la construit, la vérifie, puis la publie sur `testing`. Le PC de Thomas la télécharge en fond et l'applique au redémarrage suivant.
+2. **Valider** : onglet **Actions** → **Passer en stable** → **Run workflow** (laisser `testing`). Tous les autres PC la reçoivent.
+3. **Revenir en arrière** : sur un PC, choisir la version précédente au démarrage (ou `sudo bootc rollback`) ; pour tout le monde, relancer **Passer en stable** avec `stable-precedent` ou un numéro de version (ex. `20261122.5`).
+
+Chaque version garde un numéro unique (date + numéro de build) : rien n'est reconstruit en changeant de canal, c'est exactement la même image qui a été testée.
+
 ## Comment c'est fabriqué
 
 - Tout est construit sur les serveurs GitHub (GitHub Actions), jamais sur un PC.
 - Une seule recette (`Containerfile` + `build_files/build.sh`) donne les 3 versions : seule l'image Bazzite de départ change.
-- Construction automatique **tous les jours** (pour récupérer les mises à jour de Bazzite) et à chaque modification du repo.
+- Construction automatique **tous les jours** (pour récupérer les mises à jour de Bazzite) et à chaque modification du repo. Le build ne touche jamais au canal `stable`.
 - Les images sont **signées** (Sigstore, sans clé secrète) : on peut prouver qu'elles viennent bien de ce repo.
 
 | Fichier | À quoi il sert |
@@ -34,7 +47,8 @@ Comment connaître ta carte sous Windows : `Ctrl + Maj + Échap` → onglet **Pe
 | `Containerfile` | La recette : « pars de Bazzite et applique `build.sh` » |
 | `build_files/build.sh` | Ce qu'on change dans Bazzite pour en faire Thomas OS |
 | `system_files/` | Fichiers copiés tels quels dans le système |
-| `.github/workflows/build.yml` | Le robot GitHub qui construit et publie les 3 versions |
+| `.github/workflows/build.yml` | Le robot GitHub qui construit les 3 versions et les publie sur `testing` |
+| `.github/workflows/promote-stable.yml` | Le bouton « Passer en stable » (valider ou revenir en arrière) |
 | `image-template.env` | Réglages (nom, compte GitHub, version de départ) |
 
 ## Basé sur

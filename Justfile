@@ -83,6 +83,7 @@ sudoif command *args:
 #   $tag - The tag for the image (default: $default_tag).
 #   $base - The Bazzite image to start from (default: $base_image).
 #   $gpu - The GPU variant: amd-intel, nvidia or nvidia-legacy (default: amd-intel).
+#   $version - The Thomas OS version number, ex. 20261122.5 (default: dev).
 #
 # The script constructs the version string using the tag and the current date.
 # If the git working directory is clean, it also includes the short SHA of the current HEAD.
@@ -96,7 +97,7 @@ sudoif command *args:
 #
 
 # Build the image using the specified parameters
-build $target_image=image_name $tag=default_tag $base=base_image $gpu="amd-intel":
+build $target_image=image_name $tag=default_tag $base=base_image $gpu="amd-intel" $version="dev":
     #!/usr/bin/env bash
 
     set -euox pipefail
@@ -105,7 +106,7 @@ build $target_image=image_name $tag=default_tag $base=base_image $gpu="amd-intel
     BUILD_ARGS+=("--build-arg" "BASE_IMAGE=${base}")
     BUILD_ARGS+=("--build-arg" "IMAGE_NAME=${target_image}")
     BUILD_ARGS+=("--build-arg" "IMAGE_VENDOR={{ repo_organization }}")
-    BUILD_ARGS+=("--build-arg" "IMAGE_TAG=${tag}")
+    BUILD_ARGS+=("--build-arg" "IMAGE_VERSION=${version}")
     BUILD_ARGS+=("--build-arg" "GPU_VARIANT=${gpu}")
     LABELS=()
     if [[ -z "$(git status -s)" ]]; then
@@ -114,8 +115,8 @@ build $target_image=image_name $tag=default_tag $base=base_image $gpu="amd-intel
         LABELS+=("--label" "org.opencontainers.image.documentation=https://raw.githubusercontent.com/{{ repo_organization }}/{{ image_name }}/${GIT_SHA}/README.md")
         LABELS+=("--label" "org.opencontainers.image.source=https://github.com/{{ repo_organization }}/{{ image_name }}/blob/${GIT_SHA}/Containerfile")
         LABELS+=("--label" "org.opencontainers.image.url=https://github.com/{{ repo_organization }}/{{ image_name }}/tree/${GIT_SHA}")
-        LABELS+=("--label" "org.opencontainers.image.version={{ default_tag }}.$(date +%Y%m%d)-${GIT_SHA}")
     fi
+    LABELS+=("--label" "org.opencontainers.image.version=${version}")
 
     # Image metadata for https://artifacthub.io/ - This is optional but is highly recommended so we all can get a index of all the custom images
     # The metadata by itself is not going to do anything, you choose if you want your image to be on ArtifactHub or not.

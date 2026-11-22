@@ -18,7 +18,7 @@ FROM ${BASE_IMAGE}
 ARG BASE_IMAGE="ghcr.io/ublue-os/bazzite:stable"
 ARG IMAGE_NAME="thomas-os"
 ARG IMAGE_VENDOR="mailprofessionnelthomas-dotcom"
-ARG IMAGE_TAG="stable"
+ARG IMAGE_VERSION="dev"
 ARG GPU_VARIANT="amd-intel"
 
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
@@ -28,7 +28,7 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     BASE_IMAGE="${BASE_IMAGE}" \
     IMAGE_NAME="${IMAGE_NAME}" \
     IMAGE_VENDOR="${IMAGE_VENDOR}" \
-    IMAGE_TAG="${IMAGE_TAG}" \
+    IMAGE_VERSION="${IMAGE_VERSION}" \
     GPU_VARIANT="${GPU_VARIANT}" \
     /ctx/build.sh
 
