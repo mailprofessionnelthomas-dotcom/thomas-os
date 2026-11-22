@@ -24,7 +24,7 @@ Comment connaître ta carte sous Windows : `Ctrl + Maj + Échap` → onglet **Pe
 
 ## Ce qui est installé
 
-Thomas OS installe le strict utile : chacun ajoute ses jeux et ses applis depuis la boutique d'applis.
+Thomas OS installe le strict utile : chacun ajoute ses jeux et ses applis depuis la boutique d'applis (Bazaar). Steam, Lutris et l'ancien thème Oxygen de Bazzite sont retirés ; les outils de jeu invisibles (Gamescope, MangoHud…) restent, pour qu'un jeu installé plus tard tourne directement.
 
 | Pour quoi | Applis |
 |---|---|

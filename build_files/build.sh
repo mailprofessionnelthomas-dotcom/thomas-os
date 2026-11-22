@@ -16,6 +16,22 @@ REPO_URL="https://github.com/${IMAGE_VENDOR}/thomas-os"
 # 1. Fichiers maison (system_files/ du repo -> / de l'image)
 cp -avf /ctx/system_files/. /
 
+# 1a. Ce que Thomas ne veut pas, livré par Bazzite (choix du 2026-11-22) :
+#     Steam et Lutris (chacun installe ses jeux lui-même depuis la boutique),
+#     ancien thème Oxygen (inutile avec les styles Thomas OS).
+#     Les outils de jeu invisibles (Gamescope, MangoHud...) restent : un jeu installé
+#     plus tard tournera directement.
+REMOVE_PKGS=(steam lutris plasma-oxygen oxygen-icon-theme)
+installed_remove=()
+for pkg in "${REMOVE_PKGS[@]}"; do
+    rpm -q "${pkg}" >/dev/null 2>&1 && installed_remove+=("${pkg}")
+done
+if ((${#installed_remove[@]})); then
+    dnf5 -y remove "${installed_remove[@]}"
+fi
+# Lanceurs automatiques de Steam laissés par Bazzite (s'ils existent)
+rm -f /etc/skel/.config/autostart/steam.desktop /etc/xdg/autostart/steam.desktop
+
 # 1b. Applis en paquets système (seulement celles qui marchent mal en Flatpak)
 #     - VS Code : en Flatpak il ne voit pas Python, Node.js ni Git du système
 #     - Claude Code : dépôt officiel d'Anthropic, canal "stable" ; mis à jour avec Thomas OS
@@ -139,6 +155,14 @@ grep -q '^NAME="Thomas OS"' "${OS_RELEASE}"
 test -s /usr/share/thomas-os/info.env
 for pkg in code claude-code nodejs nodejs-npm python3 python3-pip git; do
     rpm -q "${pkg}" >/dev/null || { echo "ERREUR : paquet ${pkg} absent"; exit 1; }
+done
+# Ce qu'on a retiré est bien parti...
+for pkg in "${REMOVE_PKGS[@]}"; do
+    if rpm -q "${pkg}" >/dev/null 2>&1; then echo "ERREUR : ${pkg} est encore là"; exit 1; fi
+done
+# ...et le retrait n'a rien emporté d'important avec lui (bureau, boutique, mises à jour)
+for pkg in plasma-workspace kwin dolphin konsole flatpak bazaar uupd NetworkManager; do
+    rpm -q "${pkg}" >/dev/null || { echo "ERREUR : ${pkg} a disparu avec le retrait de ${REMOVE_PKGS[*]}"; exit 1; }
 done
 for cmd in claude code node npm python3 pip3 git; do
     command -v "${cmd}" >/dev/null || { echo "ERREUR : commande ${cmd} introuvable"; exit 1; }
