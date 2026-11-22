@@ -1,0 +1,14 @@
+[Unit]
+Description=Thomas OS : installe les applis prévues (et les nouvelles après une mise à jour)
+Documentation=https://github.com/mailprofessionnelthomas-dotcom/thomas-os
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/usr/share/flatpak/preinstall.d/thomas-os.preinstall
+
+[Service]
+Type=oneshot
+# "flatpak preinstall" installe ce qui manque dans la liste et ne réinstalle JAMAIS
+# une appli que l'utilisateur a désinstallée lui-même.
+ExecStart=/usr/bin/flatpak preinstall --system -y
+Nice=10
+IOSchedulingClass=idle

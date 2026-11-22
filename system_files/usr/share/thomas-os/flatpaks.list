@@ -1,0 +1,50 @@
+# Thomas OS : applis Flatpak (Flathub) installées sur tous les PC.
+#
+# Une ligne = une appli : type/identifiant/x86_64/branche
+#   - pour trouver l'identifiant d'une appli : https://flathub.org (bas de la page de l'appli)
+#   - AJOUTER une ligne : l'appli s'installe sur les nouveaux PC (clé USB) ET sur les PC déjà
+#     installés, au démarrage qui suit la mise à jour.
+#   - Si quelqu'un désinstalle une appli lui-même, elle n'est PAS réinstallée.
+#   - ⚠️ NE JAMAIS SUPPRIMER une ligne : ça désinstallerait l'appli sur tous les PC.
+#
+# Les lignes qui commencent par # sont des commentaires.
+
+# --- Jeux ---
+app/org.prismlauncher.PrismLauncher/x86_64/stable
+app/com.heroicgameslauncher.hgl/x86_64/stable
+app/org.vinegarhq.Sober/x86_64/stable
+app/org.vinegarhq.Vinegar/x86_64/stable
+app/com.usebottles.bottles/x86_64/stable
+app/com.vysp3r.ProtonPlus/x86_64/stable
+app/com.github.Matoking.protontricks/x86_64/stable
+runtime/org.freedesktop.Platform.VulkanLayer.MangoHud/x86_64/25.08
+runtime/org.freedesktop.Platform.VulkanLayer.vkBasalt/x86_64/25.08
+runtime/org.freedesktop.Platform.VulkanLayer.OBSVkCapture/x86_64/25.08
+
+# --- Discuter, écouter ---
+app/com.discordapp.Discord/x86_64/stable
+app/com.spotify.Client/x86_64/stable
+
+# --- Internet ---
+app/com.opera.opera-gx/x86_64/stable
+app/org.mozilla.firefox/x86_64/stable
+
+# --- Créer : notes, vidéo, streaming ---
+app/md.obsidian.Obsidian/x86_64/stable
+app/com.obsproject.Studio/x86_64/stable
+runtime/com.obsproject.Studio.Plugin.OBSVkCapture/x86_64/stable
+runtime/com.obsproject.Studio.Plugin.Gstreamer/x86_64/stable
+runtime/com.obsproject.Studio.Plugin.GStreamerVaapi/x86_64/stable
+app/org.kde.kdenlive/x86_64/stable
+
+# --- Bureau ---
+app/org.libreoffice.LibreOffice/x86_64/stable
+app/org.videolan.VLC/x86_64/stable
+app/org.kde.gwenview/x86_64/stable
+app/org.kde.okular/x86_64/stable
+app/org.kde.kcalc/x86_64/stable
+
+# --- Gérer ses applis ---
+app/com.github.tchx84.Flatseal/x86_64/stable
+app/io.github.flattool.Warehouse/x86_64/stable
+app/io.github.DenysMb.Kontainer/x86_64/stable

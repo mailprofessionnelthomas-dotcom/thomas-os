@@ -22,6 +22,24 @@ Comment connaître ta carte sous Windows : `Ctrl + Maj + Échap` → onglet **Pe
 
 **Pas compatible :** Mac Apple Silicon (M1, M2…), PC à processeur ARM (Snapdragon), PC 32 bits.
 
+## Ce qui est installé
+
+| Pour quoi | Applis |
+|---|---|
+| Jouer | Steam + Proton, Lutris, Heroic (Epic/GOG), Prism Launcher (Minecraft Java + mods), Sober (Roblox), Vinegar (Roblox Studio), Bottles (applis Windows), ProtonPlus, Protontricks, GameMode, MangoHud |
+| Discuter, écouter | Discord, Spotify |
+| Internet | Opera GX (par défaut), Firefox (secours) |
+| Créer | Obsidian, OBS Studio (+ capture de jeux), Kdenlive |
+| Coder | VS Code, Git, Python + pip, Node.js + npm, Claude Code |
+| Bureau | LibreOffice, VLC, Gwenview (images), Okular (PDF), KCalc |
+| Gérer ses applis | Flatseal, Warehouse, Kontainer |
+
+- Les applis viennent de **Flathub** (Flatpak) : la liste est dans [`system_files/usr/share/thomas-os/flatpaks.list`](system_files/usr/share/thomas-os/flatpaks.list). Une appli ajoutée à la liste s'installe aussi sur les PC déjà installés ; une appli désinstallée volontairement n'est jamais réinstallée.
+- En paquets système (car elles marchent mal en Flatpak) : VS Code, Claude Code (dépôt officiel, canal stable), Node.js, Python, Git, GameMode. Elles se mettent à jour avec Thomas OS.
+- **Zéro télémétrie côté système** : le compteur anonyme de Fedora est coupé, KDE n'envoie rien, VS Code a la télémétrie coupée par défaut. ⚠️ Steam, Discord, Spotify et Opera GX ont leurs propres statistiques, que le système ne peut pas couper (réglages dans chaque appli).
+
+**Ce qui ne marchera pas sous Linux :** FACEIT et les jeux à anti-cheat noyau (Valorant…). Sober (Roblox) n'est pas officiel : Roblox peut le bloquer. Roblox Studio via Vinegar est instable : garde Windows pour ça.
+
 ## Mises à jour : 2 canaux
 
 | Canal | Qui | Ce qu'il reçoit |

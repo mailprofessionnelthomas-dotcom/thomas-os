@@ -1,0 +1,11 @@
+[Unit]
+Description=Thomas OS : vérifie les applis prévues (au démarrage, puis toutes les 6 h si pas d'Internet avant)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=6h
+RandomizedDelaySec=5min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

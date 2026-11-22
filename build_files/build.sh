@@ -16,6 +16,80 @@ REPO_URL="https://github.com/${IMAGE_VENDOR}/thomas-os"
 # 1. Fichiers maison (system_files/ du repo -> / de l'image)
 cp -avf /ctx/system_files/. /
 
+# 1b. Applis en paquets système (seulement celles qui marchent mal en Flatpak)
+#     - VS Code : en Flatpak il ne voit pas Python, Node.js ni Git du système
+#     - Claude Code : dépôt officiel d'Anthropic, canal "stable" ; mis à jour avec Thomas OS
+#     - Node.js, pip, GameMode, Git : outils système
+#     Les dépôts sont désactivés après installation : les mises à jour arrivent
+#     avec l'image Thomas OS (reconstruite chaque jour), pas par dnf.
+
+cat >/etc/yum.repos.d/vscode.repo <<'EOF'
+[code]
+name=Visual Studio Code
+baseurl=https://packages.microsoft.com/yumrepos/vscode
+enabled=1
+gpgcheck=1
+gpgkey=https://packages.microsoft.com/keys/microsoft.asc
+EOF
+
+# Clé de signature Claude Code : on vérifie que c'est bien celle d'Anthropic avant de lui faire confiance
+CLAUDE_KEY_FPR="31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
+command -v gpg >/dev/null || dnf5 install -y gnupg2
+curl --retry 3 -fsSL https://downloads.claude.ai/keys/claude-code.asc -o /tmp/claude-code.asc
+gpg --show-keys --with-colons /tmp/claude-code.asc | grep '^fpr:' | cut -d: -f10 | grep -qx "${CLAUDE_KEY_FPR}" || {
+    echo "ERREUR : la clé de signature Claude Code n'a pas l'empreinte attendue"
+    exit 1
+}
+install -D -m 0644 /tmp/claude-code.asc /etc/pki/rpm-gpg/RPM-GPG-KEY-claude-code
+cat >/etc/yum.repos.d/claude-code.repo <<'EOF'
+[claude-code]
+name=Claude Code
+baseurl=https://downloads.claude.ai/claude-code/rpm/stable
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-claude-code
+EOF
+
+dnf5 install -y \
+    code \
+    claude-code \
+    nodejs \
+    nodejs-npm \
+    python3-pip \
+    git \
+    gamemode
+
+sed -i 's/^enabled=1/enabled=0/' /etc/yum.repos.d/vscode.repo /etc/yum.repos.d/claude-code.repo
+
+# 1c. Applis Flatpak : la liste system_files/usr/share/thomas-os/flatpaks.list devient un
+#     fichier "preinstall" de Flatpak. Le service thomas-flatpak-preinstall installe ce qui
+#     manque au démarrage, et ne réinstalle jamais une appli désinstallée volontairement.
+install -d /etc/flatpak/remotes.d
+if [[ ! -s /etc/flatpak/remotes.d/flathub.flatpakrepo ]]; then
+    curl --retry 3 -fsSL https://dl.flathub.org/repo/flathub.flatpakrepo -o /etc/flatpak/remotes.d/flathub.flatpakrepo
+fi
+
+FLATPAK_LIST=/usr/share/thomas-os/flatpaks.list
+PREINSTALL=/usr/share/flatpak/preinstall.d/thomas-os.preinstall
+install -d "$(dirname "${PREINSTALL}")"
+{
+    echo "# Généré depuis ${FLATPAK_LIST} au build de Thomas OS : ne pas modifier ici"
+    grep -Ev '^[[:space:]]*(#|$)' "${FLATPAK_LIST}" | while IFS=/ read -r kind app_id arch branch; do
+        [[ "${kind}" == "app" || "${kind}" == "runtime" ]] || { echo "ERREUR ligne invalide : ${kind}/${app_id}" >&2; exit 1; }
+        [[ -n "${app_id}" && "${arch}" == "x86_64" && -n "${branch}" ]] || { echo "ERREUR ligne invalide : ${kind}/${app_id}/${arch}/${branch}" >&2; exit 1; }
+        echo ""
+        echo "[Flatpak Preinstall ${app_id}]"
+        echo "Branch=${branch}"
+        if [[ "${kind}" == "runtime" ]]; then echo "IsRuntime=true"; else echo "IsRuntime=false"; fi
+    done
+} >"${PREINSTALL}"
+chmod 0644 "${PREINSTALL}"
+systemctl enable thomas-flatpak-preinstall.timer
+
+# 1d. Zéro télémétrie : on coupe le compteur anonyme de Fedora (rpm-ostree countme).
+#     KDE n'envoie rien par défaut ; on le fixe quand même (/etc/xdg/PlasmaUserFeedback).
+systemctl mask rpm-ostree-countme.timer rpm-ostree-countme.service
+
 # 2. Nom de l'OS : "Thomas OS" partout où le système affiche son nom.
 #    On garde ID=, ID_LIKE= et VERSION_ID= de Bazzite pour que ses outils continuent de marcher.
 OS_RELEASE=/usr/lib/os-release
@@ -64,6 +138,16 @@ chmod 0644 /usr/share/thomas-os/info.env
 # 5. Vérifications : si un de ces tests rate, le build s'arrête (rouge sur GitHub)
 grep -q '^NAME="Thomas OS"' "${OS_RELEASE}"
 test -s /usr/share/thomas-os/info.env
+for pkg in code claude-code nodejs nodejs-npm python3 python3-pip git gamemode steam lutris; do
+    rpm -q "${pkg}" >/dev/null || { echo "ERREUR : paquet ${pkg} absent"; exit 1; }
+done
+for cmd in claude code node npm python3 pip3 git gamemoderun; do
+    command -v "${cmd}" >/dev/null || { echo "ERREUR : commande ${cmd} introuvable"; exit 1; }
+done
+test "$(grep -c '^\[Flatpak Preinstall ' "${PREINSTALL}")" -eq "$(grep -Evc '^[[:space:]]*(#|$)' "${FLATPAK_LIST}")"
+flatpak preinstall --help >/dev/null
+test -L /etc/systemd/system/timers.target.wants/thomas-flatpak-preinstall.timer
+test "$(readlink /etc/systemd/system/rpm-ostree-countme.timer)" = "/dev/null"
 case "${GPU_VARIANT}" in
     amd-intel) ;;
     nvidia | nvidia-legacy)

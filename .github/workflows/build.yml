@@ -45,6 +45,31 @@ jobs:
           echo "Version : ${VERSION}"
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
 
+  # Vérifie que chaque appli de la liste existe bien sur Flathub (faute de frappe = build rouge)
+  check_apps:
+    name: Vérifier la liste des applis
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Chaque appli existe sur Flathub
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS=/ read -r kind app_id arch branch; do
+            if [[ "${kind}" == "app" ]]; then
+              code="$(curl -s -o /dev/null -w '%{http_code}' --retry 3 "https://flathub.org/api/v2/appstream/${app_id}")"
+              if [[ "${code}" == "200" ]]; then echo "OK      ${app_id}"; else echo "ABSENT  ${app_id} (HTTP ${code})"; fail=1; fi
+            else
+              # runtimes/extensions : on vérifie la présence de la référence dans le dépôt Flathub
+              echo "runtime ${app_id}//${branch} (vérifié à l'installation)"
+            fi
+          done < <(grep -Ev '^[[:space:]]*(#|$)' system_files/usr/share/thomas-os/flatpaks.list)
+          exit "${fail}"
+
   build_push:
     name: Build ${{ matrix.image_name }}
     needs: prepare
@@ -175,7 +200,7 @@ jobs:
 
   publish_testing:
     name: Publier sur le canal test
-    needs: [prepare, build_push]
+    needs: [prepare, check_apps, build_push]
     if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-26.04
     permissions:
