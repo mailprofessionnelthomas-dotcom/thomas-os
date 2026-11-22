@@ -3,8 +3,14 @@
 set -uo pipefail
 export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=KDE XDG_SESSION_DESKTOP=KDE KDE_FULL_SESSION=true KDE_SESSION_VERSION=6
 export LIBGL_ALWAYS_SOFTWARE=1  # pas de carte graphique sur GitHub : rendu OpenGL par le processeur (llvmpipe)
+export QT_FORCE_STDERR_LOGGING=1 KWIN_SCREENSHOT_NO_PERMISSION_CHECKS=1
+MODE=x11
 dire() { echo "[banc] $*"; }
-photo() {  # demande une photo de l'écran à la machine GitHub et attend qu'elle soit prise
+photo() {  # x11 : demande la photo à la machine GitHub ; virtual : photo par Spectacle (outil de capture de KDE)
+  if [ "$MODE" = virtual ]; then
+    timeout 30 spectacle -b -n -f -o "/sortie/$1.png" >/tmp/spectacle.log 2>&1 || { dire "photo $1 ratée :"; tail -5 /tmp/spectacle.log; }
+    return 0
+  fi
   echo "$1" > /sortie/demande
   for _ in $(seq 100); do [ -f /sortie/ok ] && { rm -f /sortie/ok; return 0; }; sleep 0.3; done
   dire "photo $1 : pas de réponse"
@@ -23,13 +29,22 @@ EOF
     || dire "placement de la fenêtre impossible"
 }
 
-( QT_LOGGING_RULES='kwin_*.debug=true' kwin_wayland --x11-display "$DISPLAY" --width 1920 --height 1080 \
-    --socket wayland-banc --no-lockscreen >/tmp/kwin.log 2>&1; echo "KWin terminé, code $?" >>/tmp/kwin.log ) &
-for _ in $(seq 60); do [ -S "$XDG_RUNTIME_DIR/wayland-banc" ] && break; sleep 0.5; done
-[ -S "$XDG_RUNTIME_DIR/wayland-banc" ] || { dire "KWin ne démarre pas"; tail -40 /tmp/kwin.log; exit 1; }
+kwin() {  # $@ = options d'affichage ; renvoie 0 si KWin tourne encore après 5 s
+  rm -f "$XDG_RUNTIME_DIR"/wayland-banc*
+  ( QT_LOGGING_RULES='kwin_*.debug=true' kwin_wayland "$@" --width 1920 --height 1080 \
+      --socket wayland-banc --no-lockscreen >/tmp/kwin.log 2>&1; echo "KWin terminé, code $?" >>/tmp/kwin.log ) &
+  for _ in $(seq 40); do [ -S "$XDG_RUNTIME_DIR/wayland-banc" ] && break; sleep 0.5; done
+  sleep 5
+  pgrep -x kwin_wayland >/dev/null && [ -S "$XDG_RUNTIME_DIR/wayland-banc" ] && return 0
+  dire "KWin ($MODE) s'est arrêté :"; grep -v '^$' /tmp/kwin.log | tail -25
+  return 1
+}
+if ! kwin --x11-display "$DISPLAY"; then
+  MODE=virtual
+  kwin --virtual || exit 1
+fi
+dire "KWin tourne (mode $MODE)"
 export WAYLAND_DISPLAY=wayland-banc QT_QPA_PLATFORM=wayland
-sleep 3
-pgrep -x kwin_wayland >/dev/null || { dire "KWin s'est arrêté :"; grep -v '^$' /tmp/kwin.log | tail -30; exit 1; }
 gdbus call --session --dest org.kde.KWin --object-path /KWin --method org.kde.KWin.supportInformation 2>/dev/null \
   | sed 's/\\n/\n/g' | grep -E "KWin version|Compositing Type|OpenGL renderer string|OpenGL version string" | sed 's/^/[banc] /'
 dire "journal KWin :"; grep -v '^$' /tmp/kwin.log | tail -8
