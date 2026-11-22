@@ -214,7 +214,7 @@ for cmd in thomas-style kwriteconfig6 plasma-apply-colorscheme plasma-apply-desk
 done
 HOME="$(mktemp -d)" /usr/bin/thomas-style autotest
 test "$(ls /usr/share/thomas-os/styles/*.conf | wc -l)" -eq 12
-fc-list | grep -q "Manrope" || { echo "ERREUR : police Manrope absente"; exit 1; }
+[[ "$(fc-list : family)" == *Manrope* ]] || { echo "ERREUR : police Manrope absente"; exit 1; }
 test -f /usr/share/plasma/plasmoids/org.thomasos.horloge/contents/ui/main.qml
 test -f /etc/xdg/autostart/thomas-style.desktop
 case "${GPU_VARIANT}" in
