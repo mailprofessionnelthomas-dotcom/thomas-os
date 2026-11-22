@@ -48,6 +48,10 @@ plasma() {  # $1 = délai d'attente
 plasma 90 || { export QT_QUICK_BACKEND=software; plasma 90; } || exit 1
 sleep 12
 dire "processus : $(pgrep -l -f 'plasmashell|kded6|kactivitymanagerd' | tr '\n' ' ')"
+echo 'workspace.windowList().forEach(function (w) { print("FENETRE " + w.resourceClass + " | " + w.caption + " | " + w.frameGeometry.width + "x" + w.frameGeometry.height + " | bureau=" + w.desktopWindow + " | visible=" + !w.hidden); });' > /tmp/liste.js
+n="$(gdbus call --session --dest org.kde.KWin --object-path /Scripting --method org.kde.kwin.Scripting.loadScript /tmp/liste.js liste | grep -oE '[0-9]+' | head -1)"
+gdbus call --session --dest org.kde.KWin --object-path "/Scripting/Script${n}" --method org.kde.kwin.Script.run >/dev/null 2>&1
+sleep 2; grep -o 'FENETRE.*' /tmp/kwin.log | sed 's/^/[banc] /' | head -12
 photo "00-demarrage"
 timeout 30 spectacle -b -n -f -o /sortie/00-spectacle.png >/tmp/spectacle.log 2>&1
 dire "Spectacle : $(stat -c %s /sortie/00-spectacle.png 2>/dev/null || echo 'rien') octets $(grep -v '^$' /tmp/spectacle.log | tail -2 | tr '\n' ' ')"

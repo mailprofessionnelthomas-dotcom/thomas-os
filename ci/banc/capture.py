@@ -12,12 +12,16 @@ from gi.repository import Gio, GLib
 
 bus = Gio.bus_get_sync(Gio.BusType.SESSION)
 r, w = os.pipe()
+fdl = Gio.UnixFDList.new()
+idx = fdl.append(w)  # copie du descripteur : on ferme le nôtre, puis la liste
+os.close(w)
 opts = {"include-cursor": GLib.Variant("b", False), "native-resolution": GLib.Variant("b", True)}
 res, _ = bus.call_with_unix_fd_list_sync(
     "org.kde.KWin", "/org/kde/KWin/ScreenShot2", "org.kde.KWin.ScreenShot2", "CaptureWorkspace",
-    GLib.Variant("(a{sv}h)", (opts, 0)), GLib.VariantType("(a{sv})"), Gio.DBusCallFlags.NONE, 30000,
-    Gio.UnixFDList.new_from_array([w]), None)
-os.close(w)
+    GLib.Variant("(a{sv}h)", (opts, idx)), GLib.VariantType("(a{sv})"), Gio.DBusCallFlags.NONE, 30000, fdl, None)
+for fd in fdl.steal_fds():
+    os.close(fd)
+del fdl
 info = res.unpack()[0]
 with os.fdopen(r, "rb") as f:
     data = f.read()
