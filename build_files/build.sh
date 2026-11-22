@@ -77,7 +77,8 @@ dnf5 install -y \
     nodejs \
     nodejs-npm \
     python3-pip \
-    git
+    git \
+    papirus-icon-theme
 
 sed -i 's/^enabled=1/enabled=0/' /etc/yum.repos.d/vscode.repo /etc/yum.repos.d/claude-code.repo
 
@@ -190,7 +191,7 @@ chmod 0644 /usr/share/thomas-os/info.env
 # 5. Vérifications : si un de ces tests rate, le build s'arrête (rouge sur GitHub)
 grep -q '^NAME="Thomas OS"' "${OS_RELEASE}"
 test -s /usr/share/thomas-os/info.env
-for pkg in code claude-code nodejs nodejs-npm python3 python3-pip git; do
+for pkg in code claude-code nodejs nodejs-npm python3 python3-pip git papirus-icon-theme; do
     rpm -q "${pkg}" >/dev/null || { echo "ERREUR : paquet ${pkg} absent"; exit 1; }
 done
 # Ce qu'on a retiré est bien parti...
@@ -213,7 +214,9 @@ for cmd in thomas-style kwriteconfig6 plasma-apply-colorscheme plasma-apply-desk
     command -v "${cmd}" >/dev/null || { echo "ERREUR : commande ${cmd} introuvable"; exit 1; }
 done
 HOME="$(mktemp -d)" /usr/bin/thomas-style autotest
-test "$(ls /usr/share/thomas-os/styles/*.conf | wc -l)" -eq 12
+test "$(ls /usr/share/thomas-os/styles/*.conf | wc -l)" -ge 12
+# Studio : tout ce qu'il propose (widgets, menus, icônes, curseurs, applis) doit exister dans l'image
+/usr/bin/thomas-style verifier-systeme || echo "ATTENTION : le Studio propose un élément absent (voir MANQUE ci-dessus)"
 [[ "$(fc-list : family)" == *Manrope* ]] || { echo "ERREUR : police Manrope absente"; exit 1; }
 test -f /usr/share/plasma/plasmoids/org.thomasos.horloge/contents/ui/main.qml
 test -f /etc/xdg/autostart/thomas-style.desktop

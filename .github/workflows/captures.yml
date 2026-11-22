@@ -1,0 +1,84 @@
+---
+# Banc d'essai : lance le VRAI bureau KDE de Thomas OS dans un écran virtuel (sur GitHub, jamais sur un PC),
+# prend une photo de chaque style et de chaque design du Studio, et la met à côté de sa maquette.
+# Les fichiers du repo (moteur de styles, styles, fonds, horloge) passent avant ceux de l'image :
+# on peut donc tester un nouveau design sans reconstruire l'image (Actions → Captures du vrai bureau → Run).
+name: Captures du vrai bureau
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Version à photographier (testing, ou un numéro AAAAMMJJ.N)"
+        default: testing
+
+permissions:
+  contents: read
+
+jobs:
+  captures:
+    name: Photos du vrai bureau
+    runs-on: ubuntu-26.04
+    timeout-minutes: 40
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/thomas-os:${{ inputs.image_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Maximize build space
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
+
+      - name: Écran virtuel 1920×1080
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb imagemagick python3-pil >/dev/null
+          Xvfb :99 -screen 0 1920x1080x24 -ac -nolisten tcp &
+          sleep 3
+
+      - name: Télécharger Thomas OS
+        run: sudo podman pull -q "${IMAGE,,}"
+
+      - name: Lancer le vrai bureau et prendre les photos
+        run: |
+          mkdir -p sortie system_files/usr/share/thomas-os/fonds studio/designs
+          chmod 777 sortie
+          SF="$PWD/system_files"
+          sudo podman run --rm --network none \
+            -v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY=:99 \
+            -v "$PWD/ci/banc:/banc:ro" -v "$PWD/sortie:/sortie" -v "$PWD/studio/designs:/designs:ro" \
+            -v "$SF/usr/bin/thomas-style:/usr/bin/thomas-style:ro" \
+            -v "$SF/usr/share/thomas-os/styles:/usr/share/thomas-os/styles:ro" \
+            -v "$SF/usr/share/thomas-os/fonds:/usr/share/thomas-os/fonds:ro" \
+            -v "$SF/usr/share/plasma/plasmoids/org.thomasos.horloge:/usr/share/plasma/plasmoids/org.thomasos.horloge:ro" \
+            "${IMAGE,,}" bash /banc/lancer.sh > sortie/journal.txt 2>&1 &
+          PID=$!
+          # Le bureau demande une photo en écrivant sortie/demande ; on photographie l'écran virtuel.
+          while kill -0 "$PID" 2>/dev/null; do
+            if [ -f sortie/demande ]; then
+              n="$(cat sortie/demande)"; rm -f sortie/demande
+              import -display :99 -window root "sortie/${n}.png" && touch sortie/ok
+            fi
+            sleep 0.3
+          done
+          code=0; wait "$PID" || code=$?
+          cat sortie/journal.txt
+          exit "$code"
+
+      - name: Comparer maquettes et vrai bureau
+        if: always()
+        run: |
+          python3 ci/banc/comparer.py sortie studio/designs captures
+          { echo "## Captures du vrai bureau (${{ inputs.image_tag }})"; echo '```'; cat captures/resume.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Envoyer les photos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: captures
+          path: captures
+          retention-days: 14

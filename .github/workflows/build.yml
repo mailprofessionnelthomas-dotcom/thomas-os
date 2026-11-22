@@ -21,6 +21,9 @@ on:
       - '**/README.md'
       - 'docs/**'
       - 'captures/**'
+      - 'studio/**'
+      - 'ci/banc/**'
+      - '.github/workflows/captures.yml'
   workflow_dispatch:
 
 env:
@@ -197,6 +200,17 @@ jobs:
           cosign sign -y --new-bundle-format=false --use-signing-config=false ${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}
 
   # Étape 7 : le job "simulations" (machine virtuelle) viendra ici, entre build_push et publish_testing.
+
+  # Banc d'essai : photos du vrai bureau KDE (chaque style + chaque design du Studio). Ne bloque rien.
+  captures:
+    name: Captures du vrai bureau
+    needs: [prepare, build_push]
+    if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/captures.yml
+    with:
+      image_tag: ${{ needs.prepare.outputs.version }}
 
   publish_testing:
     name: Publier sur le canal test

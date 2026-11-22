@@ -52,6 +52,14 @@ Thomas OS installe le strict utile : chacun ajoute ses jeux et ses applis depuis
 - **Les mises à jour ne touchent jamais ton style** : il est appliqué une seule fois (premier démarrage ou quand tu le choisis), puis recopié en entier dans `~/.config/thomas-os/actuel.conf`.
 - Si un effet (coins arrondis) ne marche pas avec une nouvelle version de KDE, Thomas OS reste utilisable et te prévient par une petite notification.
 
+## Studio de personnalisation
+
+Un éditeur visuel pour créer ses styles à la souris, sans rien installer : ouvre [`studio/index.html`](studio/index.html) dans ton navigateur (Opera GX, Chrome ou Edge enregistrent directement dans le dossier ; Firefox télécharge les fichiers).
+
+- Barre des tâches (bord, flottante, épaisseur, transparence, flou, coins, applis épinglées), menu démarrer, fond d'écran, widgets, boutons et ombres des fenêtres, couleurs, police, icônes, curseur. Annuler/rétablir (Ctrl+Z / Ctrl+Y), grille, magnétisme.
+- Il ne propose que ce que KDE Plasma sait vraiment faire : le build vérifie que chaque widget, menu, pack d'icônes et curseur existe dans l'image.
+- **Enregistrer** écrit `studio/designs/<style>.json` + sa capture `.png`. Ensuite `thomas-style importer studio/designs/<style>.json --repo .` le transforme en style (et corrige les petites erreurs de placement), et le banc d'essai (onglet Actions → **Captures du vrai bureau**) photographie le vrai bureau KDE à côté de la maquette.
+
 ## Mises à jour : 2 canaux
 
 | Canal | Qui | Ce qu'il reçoit |

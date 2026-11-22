@@ -2,12 +2,16 @@
 """Thomas OS : moteur de styles.
 
   thomas-style liste                 les styles disponibles
-  thomas-style appliquer ID [DISPO]  applique un style (DISPO : windows, macos, float, vertical)
+  thomas-style appliquer ID [DISPO]  applique un style (DISPO : windows, macos, float, vertical, studio)
   thomas-style choisir               fenêtre simple : choisir le style et la barre (partie de base)
   thomas-style code [ID]             ouvre le fichier du style pour le modifier (partie code)
   thomas-style secours               remet le style de base, sans effacer tes fichiers
+  thomas-style importer DESIGN.json [--repo DOSSIER]
+                                     transforme un design du Studio en style (corrige les petites erreurs)
   thomas-style connexion             lancé à chaque ouverture de session
   thomas-style autotest              vérifie tous les styles (pendant le build)
+  thomas-style verifier-systeme      vérifie que tout ce que le Studio propose existe dans l'image
+  thomas-style exporter-styles HTML  recopie les styles dans le Studio (studio/index.html)
 
 Les styles du système sont dans /usr/share/thomas-os/styles/ ; ta version modifiée va dans
 ~/.config/thomas-os/styles/ et passe avant. Le style appliqué est recopié en entier dans
@@ -15,6 +19,7 @@ Les styles du système sont dans /usr/share/thomas-os/styles/ ; ta version modif
 """
 import configparser
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -24,6 +29,7 @@ import sys
 import tempfile
 import time
 import zlib
+from datetime import date
 from pathlib import Path
 
 SYS_DIR = Path(os.environ.get("THOMAS_STYLES_DIR", "/usr/share/thomas-os/styles"))
@@ -33,24 +39,75 @@ DATA = Path(os.environ.get("XDG_DATA_HOME", HOME / ".local/share"))
 USER_DIR = CFG / "styles"
 ACTUEL = CFG / "actuel.conf"
 DEFAUT = "thomas"
+ECRAN = (1920, 1080)
 DISPOS = {"windows": "Windows 11 (en bas, centrée)", "macos": "macOS (barre en haut + dock)",
-          "float": "Flottante", "vertical": "Verticale"}
+          "float": "Flottante", "vertical": "Verticale", "studio": "Celle du Studio (perso)"}
 POLICES = {"manrope": "Manrope", "open": "Open Sans", "outfit": "Outfit", "nunito": "Nunito",
            "plex": "IBM Plex Sans", "rajdhani": "Rajdhani", "mono": "JetBrains Mono"}
 ANIMS = {"rapides": "0.5", "normales": "1", "aucune": "0"}
+# Applis présentes dans Thomas OS (même liste que le Studio). RPM = installées dans l'image.
+APPS_RPM = ["org.kde.dolphin", "code", "org.kde.konsole", "systemsettings", "io.github.kolunmi.Bazaar"]
+APPS_FLATPAK = ["com.opera.opera-gx", "org.mozilla.firefox", "com.spotify.Client", "org.libreoffice.LibreOffice",
+                "org.videolan.VLC", "org.kde.gwenview", "org.kde.okular", "org.kde.kcalc", "com.github.tchx84.Flatseal",
+                "io.github.flattool.Warehouse", "io.github.DenysMb.Kontainer"]
+APPS = APPS_RPM + APPS_FLATPAK
+EPINGLES = ["org.kde.dolphin", "com.opera.opera-gx", "org.mozilla.firefox", "com.spotify.Client",
+            "code", "org.kde.konsole", "systemsettings"]
+FAVORIS = ["org.kde.dolphin", "com.opera.opera-gx", "org.mozilla.firefox", "com.spotify.Client", "code", "org.kde.konsole",
+           "org.libreoffice.LibreOffice", "org.videolan.VLC", "org.kde.gwenview", "org.kde.okular", "org.kde.kcalc",
+           "systemsettings"]
+# Widgets du Studio -> vrais widgets KDE Plasma : (plugin, largeur, hauteur, largeur mini, hauteur mini)
+WIDGETS = {"horloge-thomas": ("org.thomasos.horloge", 620, 170, 300, 110),
+           "horloge": ("org.kde.plasma.digitalclock", 300, 120, 160, 70),
+           "horloge-analogique": ("org.kde.plasma.analogclock", 200, 200, 120, 120),
+           "meteo": ("org.kde.plasma.weather", 320, 200, 220, 140),
+           "cpu": ("org.kde.plasma.systemmonitor.cpu", 300, 180, 180, 120),
+           "memoire": ("org.kde.plasma.systemmonitor.memory", 300, 180, 180, 120),
+           "reseau": ("org.kde.plasma.systemmonitor.net", 300, 180, 180, 120),
+           "musique": ("org.kde.plasma.mediacontroller", 360, 150, 240, 100),
+           "notes": ("org.kde.plasma.notes", 260, 260, 160, 160)}
+MENUS = {"kickoff": "org.kde.plasma.kickoff", "kicker": "org.kde.plasma.kicker", "dash": "org.kde.plasma.kickerdash"}
+PLUGINS_BARRE = ["org.kde.plasma.icontasks", "org.kde.plasma.systemtray", "org.kde.plasma.digitalclock",
+                 "org.kde.plasma.panelspacer", "org.kde.plasma.pager", "org.kde.plasma.showdesktop",
+                 "org.kde.plasma.appmenu", "org.kde.plasma.folder"]
+ICONES = {"auto": "", "breeze-dark": "Breeze sombre", "breeze": "Breeze clair", "Papirus-Dark": "Papirus sombre",
+          "Papirus": "Papirus clair"}
+CURSEURS = {"breeze_cursors": "Breeze", "Breeze_Light": "Breeze clair", "Adwaita": "Adwaita"}
+OMBRES = {"aucune": "ShadowNone", "petite": "ShadowSmall", "moyenne": "ShadowMedium", "grande": "ShadowLarge",
+          "enorme": "ShadowVeryLarge"}
+BOUTONS = "MSFHIAX"
+TAILLES_ICONES = [16, 22, 32, 48, 64, 128]
 BASE = {
     "style": {"nom": "", "description": ""},
     "couleurs": {"principale": "#4cc2ff", "barre": "#1b2331", "fenetres": "#1f2836", "texte": "#f2f5f9",
                  "fond_haut": "#1f5f99", "fond_bas": "#08131f"},
     "effets": {"opacite": "85", "opacite_menus": "85", "flou": "0", "coins": "8", "animations": "rapides"},
-    "barre": {"epaisseur": "28", "disposition": "windows"},
+    "barre": {"epaisseur": "28", "disposition": "windows", "bord": "bas", "flottante": "non", "longueur": "pleine",
+              "alignement": "centre", "masquage": "non", "epingles": ",".join(EPINGLES), "bureaux": "non",
+              "afficher_bureau": "non", "date": "oui", "barre_haut": "non"},
+    "menu": {"type": "kickoff", "largeur": "640", "hauteur": "560", "favoris": "grille", "cote": "gauche",
+             "epingles": ",".join(FAVORIS)},
     "texte": {"police": "manrope", "taille": "12", "epaisseur_texte": "400"},
-    "bureau": {"horloge": "oui"},
+    "bureau": {"horloge": "oui", "fond": "degrade", "fond_image": "", "icones": "oui", "taille_icones": "3",
+               "icones_liste": "", "widgets": ""},
+    "fenetres": {"boutons_gauche": "M", "boutons_droite": "IAX", "coins": "", "opacite_inactive": "100",
+                 "opacite_deplacement": "100", "ombre": "moyenne", "force_ombre": "50"},
+    "systeme": {"icones": "auto", "curseur": "breeze_cursors", "taille_curseur": "24"},
 }
 LIMITES = {"opacite": (10, 100), "opacite_menus": (10, 100), "flou": (0, 40), "coins": (0, 20),
-           "epaisseur": (22, 44), "taille": (10, 14), "epaisseur_texte": (300, 500)}
-EPINGLES = ["org.kde.dolphin", "com.opera.opera-gx", "org.mozilla.firefox", "com.spotify.Client",
-            "code", "org.kde.konsole", "systemsettings"]
+           "epaisseur": (22, 44), "taille": (10, 14), "epaisseur_texte": (300, 500), "largeur": (480, 1200),
+           "hauteur": (400, 1000), "taille_icones": (0, 5), "opacite_inactive": (30, 100),
+           "opacite_deplacement": (30, 100), "force_ombre": (0, 100), "taille_curseur": (16, 64)}
+OUINON = ("oui", "non")
+CHOIX = [("barre", "disposition", DISPOS), ("texte", "police", POLICES), ("bureau", "horloge", OUINON),
+         ("effets", "animations", ANIMS), ("barre", "bord", ("bas", "haut", "gauche", "droite")),
+         ("barre", "flottante", OUINON), ("barre", "longueur", ("pleine", "ajustee")),
+         ("barre", "alignement", ("centre", "gauche")), ("barre", "masquage", ("non", "auto", "fenetres")),
+         ("barre", "bureaux", OUINON), ("barre", "afficher_bureau", OUINON), ("barre", "date", OUINON),
+         ("barre", "barre_haut", OUINON), ("menu", "type", MENUS), ("menu", "favoris", ("grille", "liste")),
+         ("menu", "cote", ("gauche", "droite")), ("bureau", "fond", ("degrade", "uni", "image")),
+         ("bureau", "icones", OUINON), ("fenetres", "ombre", OMBRES), ("systeme", "icones", ICONES),
+         ("systeme", "curseur", CURSEURS)]
 EFFET_COINS = "kwin4_effect_shapecorners"
 
 
@@ -68,11 +125,15 @@ def lire(chemin):
     return cp
 
 
-def charger(sid, perso=True):
+def liste(v):
+    return [x.strip() for x in v.split(",") if x.strip()]
+
+
+def charger(sid, perso=True, fichiers=None):
     """Style = valeurs de base + fichier du système + ton fichier perso (partie code)."""
     if not re.fullmatch(r"[a-z0-9_-]+", sid or ""):
         raise Erreur(f"Nom de style invalide : {sid}")
-    fichiers = [SYS_DIR / f"{sid}.conf"] + ([USER_DIR / f"{sid}.conf"] if perso else [])
+    fichiers = fichiers or [SYS_DIR / f"{sid}.conf"] + ([USER_DIR / f"{sid}.conf"] if perso else [])
     if not any(f.exists() for f in fichiers):
         raise Erreur(f"Style inconnu : {sid}")
     s = {sec: dict(v) for sec, v in BASE.items()}
@@ -91,6 +152,8 @@ def verifier(s, sid):
         if not re.fullmatch(r"#[0-9a-fA-F]{6}", v):
             raise Erreur(f"{sid} : couleur « {k} = {v} » (format #rrggbb)")
         s["couleurs"][k] = v.lower()
+    if not s["fenetres"]["coins"]:
+        s["fenetres"]["coins"] = s["effets"]["coins"]
     for sec, vals in s.items():
         for k, (lo, hi) in LIMITES.items():
             if k in vals:
@@ -101,11 +164,35 @@ def verifier(s, sid):
                 if not lo <= n <= hi:
                     raise Erreur(f"{sid} : « {k} » va de {lo} à {hi}")
                 vals[k] = str(n)
-    regles = [("barre", "disposition", DISPOS), ("texte", "police", POLICES),
-              ("bureau", "horloge", ("oui", "non")), ("effets", "animations", ANIMS)]
-    for sec, k, ok in regles:
+    for sec, k, ok in CHOIX:
         if s[sec][k] not in ok:
             raise Erreur(f"{sid} : « {k} » = {' / '.join(ok)}")
+    for sec in ("barre", "menu"):
+        for a in liste(s[sec]["epingles"]):
+            if a not in APPS:
+                raise Erreur(f"{sid} : appli inconnue « {a} »")
+    for a in liste(s["bureau"]["icones_liste"]):
+        if a not in APPS + ["home", "trash"]:
+            raise Erreur(f"{sid} : icône de bureau inconnue « {a} »")
+    for k in ("boutons_gauche", "boutons_droite"):
+        if not re.fullmatch(f"[{BOUTONS}]*", s["fenetres"][k]):
+            raise Erreur(f"{sid} : « {k} » = lettres parmi {BOUTONS}")
+    widgets(s)
+
+
+def widgets(s):
+    """Liste des widgets du bureau : [(type, x, y, largeur, hauteur)] (repère 1920×1080)."""
+    out = []
+    for morceau in s["bureau"]["widgets"].split(";"):
+        if not morceau.strip():
+            continue
+        p = morceau.split()
+        if len(p) != 5 or p[0] not in WIDGETS or not all(re.fullmatch(r"-?\d+", x) for x in p[1:]):
+            raise Erreur(f"widget mal écrit : « {morceau.strip()} » (type x y largeur hauteur)")
+        out.append((p[0], *map(int, p[1:])))
+    if not out and s["bureau"]["horloge"] == "oui":
+        out.append(("horloge-thomas", 48, 40, 620, 170))
+    return out
 
 
 # ---------- couleurs ----------
@@ -150,7 +237,7 @@ def schema(nom, fond, texte, accent, comp):
 
 
 def cadre(couleur, alpha, r):
-    """Fond de barre ou de menu (SVG en 9 morceaux), avec transparence et coins arrondis."""
+    """Fond de barre, de menu ou de widget (SVG en 9 morceaux), avec transparence et coins arrondis."""
     r, m = max(r, 1), 8
     w = 2 * r + m
     f = f'fill="{couleur}" fill-opacity="{alpha:.2f}"'
@@ -198,7 +285,7 @@ def generer(s, sid, data):
     (data / "color-schemes").mkdir(parents=True, exist_ok=True)
     (data / "color-schemes" / f"{nom_schema}.colors").write_text(
         schema(nom_schema, c["fenetres"], c["texte"], c["principale"], c["barre"]), encoding="utf-8")
-    # 2. thème Plasma : barre et menus
+    # 2. thème Plasma : barre, menus et widgets du bureau
     th = data / "plasma/desktoptheme" / nom_theme
     for sous in ("widgets", "dialogs", "translucent/widgets", "translucent/dialogs"):
         (th / sous).mkdir(parents=True, exist_ok=True)
@@ -212,53 +299,112 @@ def generer(s, sid, data):
     menus = cadre(s["couleurs"]["barre"], e["opacite_menus"] / 100, e["coins"])
     for base in ("", "translucent/"):
         (th / f"{base}widgets/panel-background.svg").write_text(barre, encoding="utf-8")
+        (th / f"{base}widgets/background.svg").write_text(menus, encoding="utf-8")
         (th / f"{base}dialogs/background.svg").write_text(menus, encoding="utf-8")
-    # 3. fond d'écran
-    (data / "wallpapers").mkdir(parents=True, exist_ok=True)
-    fond = data / "wallpapers" / f"thomas-os-{sid}-{empreinte}.png"
-    png_degrade(fond, s["couleurs"]["fond_haut"], s["couleurs"]["fond_bas"])
+    # 3. fond d'écran : image du Studio, ou dégradé
+    image = Path(s["bureau"]["fond_image"]) if s["bureau"]["fond_image"] else None
+    if s["bureau"]["fond"] == "image" and image and image.exists():
+        fond = image
+    else:
+        (data / "wallpapers").mkdir(parents=True, exist_ok=True)
+        fond = data / "wallpapers" / f"thomas-os-{sid}-{empreinte}.png"
+        bas = s["couleurs"]["fond_haut"] if s["bureau"]["fond"] == "uni" else s["couleurs"]["fond_bas"]
+        png_degrade(fond, s["couleurs"]["fond_haut"], bas)
     return nom_schema, nom_theme, fond, script_barre(s, fond)
 
 
-def script_barre(s, fond):
-    """Script Plasma qui construit la barre des tâches et pose l'horloge sur le bureau."""
-    clair = lum(mix(rgb(s["couleurs"]["fond_haut"]), rgb(s["couleurs"]["fond_bas"]), 0.3)) > 0.55
-    couleur_horloge = s["couleurs"]["texte"] if clair else "#ffffff"
-    return f"""
-var D = "{s['barre']['disposition']}", H = {int(s['barre']['epaisseur'])};
-var HORLOGE = {'true' if s['bureau']['horloge'] == 'oui' else 'false'}, COUL = "{couleur_horloge}";
-var LANCEURS = "{','.join('applications:' + a + '.desktop' for a in EPINGLES)}";
-var FOND = "file://{fond}";
-panels().forEach(function (p) {{ p.remove(); }});
-function w(p, n) {{ return p.addWidget(n); }}
-function cfg(x, k, v) {{ x.currentConfigGroup = ["General"]; x.writeConfig(k, v); }}
-function menu(p) {{ cfg(w(p, "org.kde.plasma.kickoff"), "icon", "thomas-os"); }}
-function taches(p) {{ cfg(w(p, "org.kde.plasma.icontasks"), "launchers", LANCEURS); }}
-function droite(p) {{ w(p, "org.kde.plasma.systemtray"); w(p, "org.kde.plasma.digitalclock"); }}
-var p = new Panel;
-if (D === "windows") {{ p.location = "bottom"; p.height = H; p.floating = false;
-  w(p, "org.kde.plasma.panelspacer"); menu(p); taches(p); w(p, "org.kde.plasma.panelspacer"); droite(p); }}
-else if (D === "float") {{ p.location = "bottom"; p.height = H; p.floating = true; p.lengthMode = "fit";
-  p.alignment = "center"; menu(p); taches(p); droite(p); }}
-else if (D === "vertical") {{ p.location = "left"; p.height = H + 6; p.floating = false;
-  menu(p); taches(p); w(p, "org.kde.plasma.panelspacer"); droite(p); }}
-else {{ p.location = "top"; p.height = 24; p.floating = false;
-  menu(p); w(p, "org.kde.plasma.appmenu"); w(p, "org.kde.plasma.panelspacer"); droite(p);
-  var dock = new Panel; dock.location = "bottom"; dock.height = H + 12; dock.floating = true;
-  dock.lengthMode = "fit"; dock.alignment = "center"; taches(dock); }}
-desktops().forEach(function (d) {{
+def couleur_horloge(s):
+    if s["bureau"]["fond"] == "image":
+        return "#ffffff"
+    bas = s["couleurs"]["fond_haut"] if s["bureau"]["fond"] == "uni" else s["couleurs"]["fond_bas"]
+    clair = lum(mix(rgb(s["couleurs"]["fond_haut"]), rgb(bas), 0.3)) > 0.55
+    return s["couleurs"]["texte"] if clair else "#ffffff"
+
+
+JS_BARRE = """
+var D = C.D, H = C.H, B = C.B, M = C.MENU;
+panels().forEach(function (p) { p.remove(); });
+function w(p, n) { return p.addWidget(n); }
+function cfg(x, k, v) { x.currentConfigGroup = ["General"]; x.writeConfig(k, v); }
+function panneau(lieu, h, flottant) { var p = new Panel; p.location = lieu; p.height = h; p.floating = flottant; return p; }
+function menu(p) {
+  var m = w(p, M.plugin); cfg(m, "icon", "thomas-os");
+  cfg(m, "favoritesPortedToKAstats", false); cfg(m, "favorites", M.favoris); cfg(m, "favoriteApps", M.favoris);
+  if (M.plugin === "org.kde.plasma.kickoff") {
+    cfg(m, "popupWidth", M.largeur); cfg(m, "popupHeight", M.hauteur);
+    cfg(m, "favoritesDisplay", M.liste ? 1 : 0); cfg(m, "paneSwap", M.droite);
+  }
+}
+function taches(p) { cfg(w(p, "org.kde.plasma.icontasks"), "launchers", C.LANCEURS); }
+function droite(p) { w(p, "org.kde.plasma.systemtray"); cfg(w(p, "org.kde.plasma.digitalclock"), "showDate", B.date); }
+if (D === "windows") { var p = panneau("bottom", H, false);
+  w(p, "org.kde.plasma.panelspacer"); menu(p); taches(p); w(p, "org.kde.plasma.panelspacer"); droite(p); }
+else if (D === "float") { var p = panneau("bottom", H, true); p.lengthMode = "fit"; p.alignment = "center";
+  menu(p); taches(p); droite(p); }
+else if (D === "vertical") { var p = panneau("left", H + 6, false);
+  menu(p); taches(p); w(p, "org.kde.plasma.panelspacer"); droite(p); }
+else if (D === "macos") { var t = panneau("top", 24, false);
+  menu(t); w(t, "org.kde.plasma.appmenu"); w(t, "org.kde.plasma.panelspacer"); droite(t);
+  var dock = panneau("bottom", H + 12, true); dock.lengthMode = "fit"; dock.alignment = "center"; taches(dock); }
+else {
+  var haut = B.haut && B.bord !== "haut", fit = B.longueur === "ajustee";
+  if (haut) { var t = panneau("top", 24, false); w(t, "org.kde.plasma.appmenu"); w(t, "org.kde.plasma.panelspacer"); droite(t); }
+  var p = panneau({bas: "bottom", haut: "top", gauche: "left", droite: "right"}[B.bord], H, B.flottante);
+  if (fit) { p.lengthMode = "fit"; p.alignment = "center"; }
+  p.hiding = {non: "none", auto: "autohide", fenetres: "dodgewindows"}[B.masquage];
+  if (!fit && B.alignement === "centre") w(p, "org.kde.plasma.panelspacer");
+  menu(p); taches(p); if (B.bureaux) w(p, "org.kde.plasma.pager");
+  if (!fit) w(p, "org.kde.plasma.panelspacer");
+  if (!haut) droite(p);
+  if (B.montrer) w(p, "org.kde.plasma.showdesktop");
+}
+desktops().forEach(function (d) {
   d.wallpaperPlugin = "org.kde.image";
   d.currentConfigGroup = ["Wallpaper", "org.kde.image", "General"];
-  d.writeConfig("Image", FOND);
-  d.widgets("org.thomasos.horloge").forEach(function (x) {{ x.remove(); }});
-  if (HORLOGE) {{ var h = d.addWidget("org.thomasos.horloge", 48, 40, 620, 170); cfg(h, "couleur", COUL); }}
-}});
+  d.writeConfig("Image", C.FOND);
+  C.GERES.forEach(function (n) { d.widgets(n).forEach(function (x) { x.remove(); }); });
+  var sx = 1, sy = 1;
+  try { var g = screenGeometry(d.screen); if (g.width > 0) { sx = g.width / 1920; sy = g.height / 1080; } } catch (e) {}
+  C.WIDGETS.forEach(function (x) {
+    var a = d.addWidget(x[0], Math.round(x[1] * sx), Math.round(x[2] * sy), Math.round(x[3] * sx), Math.round(x[4] * sy));
+    if (a) for (var k in x[5]) cfg(a, k, x[5][k]);
+  });
+  d.currentConfigGroup = ["General"];
+  d.writeConfig("iconSize", C.ICONES.taille);
+  d.writeConfig("filterMode", C.ICONES.afficher ? 0 : 2);
+  d.writeConfig("filterPattern", C.ICONES.afficher ? "" : "*");
+});
 """
+
+
+def script_barre(s, fond):
+    """Script Plasma qui construit les barres, le menu, le fond et les widgets du bureau."""
+    b, m, bu = s["barre"], s["menu"], s["bureau"]
+    coul = couleur_horloge(s)
+    data = {
+        "D": b["disposition"], "H": int(b["epaisseur"]),
+        "B": {"bord": b["bord"], "flottante": b["flottante"] == "oui", "longueur": b["longueur"],
+              "alignement": b["alignement"], "masquage": b["masquage"], "bureaux": b["bureaux"] == "oui",
+              "montrer": b["afficher_bureau"] == "oui", "date": b["date"] == "oui", "haut": b["barre_haut"] == "oui"},
+        "LANCEURS": ",".join(f"applications:{a}.desktop" for a in liste(b["epingles"])),
+        "MENU": {"plugin": MENUS[m["type"]], "largeur": int(m["largeur"]), "hauteur": int(m["hauteur"]),
+                 "liste": m["favoris"] == "liste", "droite": m["cote"] == "droite",
+                 "favoris": [f"applications:{a}.desktop" for a in liste(m["epingles"])]},
+        "WIDGETS": [[WIDGETS[t][0], x, y, l, h, {"couleur": coul} if t == "horloge-thomas" else {}]
+                    for t, x, y, l, h in widgets(s)],
+        "GERES": sorted({v[0] for v in WIDGETS.values()}),
+        "ICONES": {"afficher": bu["icones"] == "oui", "taille": int(bu["taille_icones"])},
+        "FOND": f"file://{fond}",
+    }
+    return "var C = " + json.dumps(data, ensure_ascii=False) + ";" + JS_BARRE
 
 
 # ---------- application dans KDE ----------
 def lancer(cmd, important=False):
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True)
+    except FileNotFoundError:
+        r = subprocess.CompletedProcess(cmd, 127, "", "commande absente")
     if r.returncode != 0:
         msg = f"⚠️ {' '.join(cmd[:3])}… : {r.stderr.strip()[:200]}"
         if important:
@@ -290,6 +436,35 @@ def police(nom, pt, poids):
     return f"{nom},{pt},-1,5,{poids},0,0,0,0,0,0,0,0,0,0,1"
 
 
+def dossier_bureau():
+    r = subprocess.run(["xdg-user-dir", "DESKTOP"], capture_output=True, text=True)
+    return Path(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else HOME / "Desktop"
+
+
+def raccourcis_bureau(ids):
+    """Raccourcis demandés par le style sur le bureau. Ne touche qu'aux fichiers thomas-os-*.desktop."""
+    bureau = dossier_bureau()
+    bureau.mkdir(parents=True, exist_ok=True)
+    voulus = {f"thomas-os-{i}.desktop" for i in ids}
+    for f in bureau.glob("thomas-os-*.desktop"):
+        if f.name not in voulus:
+            f.unlink()
+    for i in ids:
+        if i == "home":
+            contenu = f"[Desktop Entry]\nType=Link\nName=Dossier perso\nIcon=user-home\nURL={HOME.as_uri()}\n"
+        elif i == "trash":
+            contenu = "[Desktop Entry]\nType=Link\nName=Corbeille\nIcon=user-trash\nURL=trash:/\n"
+        else:
+            src = next((p for p in (Path(f"/usr/share/applications/{i}.desktop"),
+                                    Path(f"/var/lib/flatpak/exports/share/applications/{i}.desktop")) if p.exists()), None)
+            if not src:
+                continue
+            contenu = src.read_text(encoding="utf-8")
+        f = bureau / f"thomas-os-{i}.desktop"
+        f.write_text(contenu, encoding="utf-8")
+        f.chmod(0o755)
+
+
 def appliquer(sid, dispo=None, barre=True):
     s = charger(sid)
     if dispo:
@@ -306,8 +481,28 @@ def appliquer(sid, dispo=None, barre=True):
         kw("kdeglobals", "General", cle, police(nom, pt, pds))
     kw("kdeglobals", "General", "fixed", police("JetBrains Mono", t - 2, 400))
     kw("kdeglobals", "WM", "activeFont", police(nom, t - 2, min(pds + 200, 700)))
+    # icônes et curseur
+    icones = s["systeme"]["icones"]
+    if icones == "auto":
+        icones = "breeze-dark" if lum(rgb(s["couleurs"]["fenetres"])) < 0.5 else "breeze"
+    kw("kdeglobals", "Icons", "Theme", icones)
+    if Path("/usr/libexec/plasma-changeicons").exists():
+        lancer(["/usr/libexec/plasma-changeicons", icones])
+    kw("kcminputrc", "Mouse", "cursorTheme", s["systeme"]["curseur"])
+    kw("kcminputrc", "Mouse", "cursorSize", s["systeme"]["taille_curseur"])
+    lancer(["plasma-apply-cursortheme", s["systeme"]["curseur"]])
+    # fenêtres : boutons, coins, ombre, transparence
+    f = s["fenetres"]
+    kw("kwinrc", "org.kde.kdecoration2", "ButtonsOnLeft", f["boutons_gauche"])
+    kw("kwinrc", "org.kde.kdecoration2", "ButtonsOnRight", f["boutons_droite"])
+    kw("breezerc", "Common", "ShadowSize", OMBRES[f["ombre"]])
+    kw("breezerc", "Common", "ShadowStrength", str(round(int(f["force_ombre"]) * 255 / 100)))
+    transp = int(f["opacite_inactive"]) < 100 or int(f["opacite_deplacement"]) < 100
+    kw("kwinrc", "Plugins", "translucencyEnabled", "true" if transp else "false")
+    kw("kwinrc", "Effect-translucency", "Inactive", f["opacite_inactive"])
+    kw("kwinrc", "Effect-translucency", "MoveResize", f["opacite_deplacement"])
     # effets : coins arrondis, flou, animations courtes
-    coins, flou = int(s["effets"]["coins"]), int(s["effets"]["flou"])
+    coins, flou = int(f["coins"]), int(s["effets"]["flou"])
     kw("kwinrc", "Plugins", f"{EFFET_COINS}Enabled", "true" if coins else "false")
     kw("kwinrc", "Round-Corners", "Size", str(coins))
     kw("kwinrc", "Round-Corners", "InactiveCornerRadius", str(coins))
@@ -315,6 +510,8 @@ def appliquer(sid, dispo=None, barre=True):
     kw("kwinrc", "Effect-blur", "BlurStrength", str(max(1, min(15, round(flou / 40 * 14) + 1))))
     kw("kdeglobals", "KDE", "AnimationDurationFactor", ANIMS[s["effets"]["animations"]])
     gdbus("org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure")
+    if s["bureau"]["icones"] == "oui":
+        raccourcis_bureau(liste(s["bureau"]["icones_liste"]))
     if barre and attendre_plasma():
         gdbus("org.kde.plasmashell", "/PlasmaShell", "org.kde.PlasmaShell.evaluateScript", js)
     # mémoriser le style appliqué, en entier
@@ -322,9 +519,9 @@ def appliquer(sid, dispo=None, barre=True):
     cp = configparser.ConfigParser(interpolation=None)
     cp.read_dict(s)
     cp["style"]["id"] = sid
-    with ACTUEL.open("w", encoding="utf-8") as f:
-        f.write("# Style appliqué (copie complète). Pour le modifier : thomas-style code\n")
-        cp.write(f)
+    with ACTUEL.open("w", encoding="utf-8") as fic:
+        fic.write("# Style appliqué (copie complète). Pour le modifier : thomas-style code\n")
+        cp.write(fic)
     print(f"Style « {s['style']['nom']} » appliqué ({DISPOS[s['barre']['disposition']]}).")
 
 
@@ -346,7 +543,7 @@ def connexion():
         appliquer(DEFAUT)
         return
     cp = lire(ACTUEL)
-    if cp.getint("effets", "coins", fallback=0) > 0:
+    if cp.getint("fenetres", "coins", fallback=cp.getint("effets", "coins", fallback=0)) > 0:
         time.sleep(5)
         if not effet_charge(EFFET_COINS):
             notifier("Coins arrondis en pause", "Effet indisponible avec cette version · ton style est gardé")
@@ -403,6 +600,274 @@ def code(sid=None):
     print(perso)
 
 
+# ---------- Studio : design (.json) -> style (.conf), avec corrections ----------
+def importer(chemin, repo=None):
+    """Transforme un design du Studio en style. Renvoie (fichier écrit, liste des corrections)."""
+    chemin = Path(chemin)
+    try:
+        j = json.loads(chemin.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise Erreur(f"{chemin} : fichier illisible ({e})") from e
+    if j.get("format") != "thomas-os-studio":
+        raise Erreur(f"{chemin} : ce n'est pas un design du Studio")
+    corr = []
+    sid = re.sub(r"[^a-z0-9_-]+", "-", str(j.get("id") or j.get("nom") or "perso").lower()).strip("-") or "perso"
+    g = lambda sec, k, d=None: (j.get(sec) or {}).get(k, d)  # noqa: E731
+
+    def num(sec, k, nom, defaut, lo, hi):
+        try:
+            n = round(float(g(sec, k, defaut)))
+        except (TypeError, ValueError):
+            corr.append(f"{nom} illisible → {defaut}")
+            return defaut
+        if not lo <= n <= hi:
+            corr.append(f"{nom} {n} → {min(max(n, lo), hi)} (de {lo} à {hi})")
+        return min(max(n, lo), hi)
+
+    def un(sec, k, nom, ok, defaut):
+        v = g(sec, k, defaut)
+        v = {True: "oui", False: "non"}.get(v, v)
+        if v not in ok:
+            corr.append(f"{nom} « {v} » inconnu → {defaut}")
+            return defaut
+        return v
+
+    def coul(sec, k, defaut):
+        v = str(g(sec, k, defaut)).lower()
+        if not re.fullmatch(r"#[0-9a-f]{6}", v):
+            corr.append(f"couleur {k} « {v} » → {defaut}")
+            return defaut
+        return v
+
+    def applis(sec, nom):
+        out = []
+        for a in g(sec, "epingles", []) or []:
+            if a not in APPS:
+                corr.append(f"{nom} : appli inconnue « {a} » retirée")
+            elif a in out:
+                corr.append(f"{nom} : {a} en double, retiré")
+            else:
+                out.append(a)
+        return out
+
+    # écran du design -> repère 1920×1080
+    ecran = j.get("ecran") or {}
+    ex, ey = ECRAN[0] / max(1, ecran.get("l", ECRAN[0])), ECRAN[1] / max(1, ecran.get("h", ECRAN[1]))
+    s = {sec: {} for sec in BASE}
+    s["style"] = {"nom": str(j.get("nom") or sid), "description": f"Créé avec le Studio ({date.today():%d/%m/%Y})"}
+    b = BASE["couleurs"]
+    s["couleurs"] = {"principale": coul("couleurs", "principale", b["principale"]),
+                     "barre": coul("couleurs", "barre", b["barre"]),
+                     "fenetres": coul("couleurs", "fenetres", b["fenetres"]),
+                     "texte": coul("couleurs", "texte", b["texte"]),
+                     "fond_haut": coul("fond", "haut", b["fond_haut"]), "fond_bas": coul("fond", "bas", b["fond_bas"])}
+    s["effets"] = {"opacite": num("effets", "opacite", "opacité de la barre", 85, 10, 100),
+                   "opacite_menus": num("effets", "opacite_menus", "opacité des menus", 85, 10, 100),
+                   "flou": num("effets", "flou", "flou", 0, 0, 40), "coins": num("effets", "coins", "coins", 8, 0, 20),
+                   "animations": un("effets", "animations", "animations", ANIMS, "rapides")}
+    bord = un("barre", "bord", "bord de la barre", ("bas", "haut", "gauche", "droite"), "bas")
+    T = num("barre", "epaisseur", "épaisseur de la barre", 28, 22, 44)
+    haut = un("barre", "barre_haut", "barre du haut", OUINON, "non")
+    if haut == "oui" and bord == "haut":
+        haut = "non"
+        corr.append("barre du haut enlevée : la barre principale est déjà en haut")
+    s["barre"] = {"epaisseur": T, "disposition": "studio", "bord": bord,
+                  "flottante": un("barre", "flottante", "barre flottante", OUINON, "non"),
+                  "longueur": un("barre", "longueur", "longueur de la barre", ("pleine", "ajustee"), "pleine"),
+                  "alignement": un("barre", "alignement", "alignement", ("centre", "gauche"), "centre"),
+                  "masquage": un("barre", "masquage", "masquage", ("non", "auto", "fenetres"), "non"),
+                  "epingles": ",".join(applis("barre", "barre")),
+                  "bureaux": un("barre", "bureaux", "bureaux virtuels", OUINON, "non"),
+                  "afficher_bureau": un("barre", "afficher_bureau", "bouton bureau", OUINON, "non"),
+                  "date": un("barre", "date", "date", OUINON, "oui"), "barre_haut": haut}
+    s["menu"] = {"type": un("menu", "type", "type de menu", MENUS, "kickoff"),
+                 "largeur": num("menu", "largeur", "largeur du menu", 640, 480, 1200),
+                 "hauteur": num("menu", "hauteur", "hauteur du menu", 560, 400, 1000),
+                 "favoris": un("menu", "favoris", "affichage des favoris", ("grille", "liste"), "grille"),
+                 "cote": un("menu", "cote", "côté des catégories", ("gauche", "droite"), "gauche"),
+                 "epingles": ",".join(applis("menu", "favoris du menu"))}
+    pol = g("texte", "police", "manrope")
+    if pol not in POLICES:
+        corr.append(f"police « {pol} » inconnue → Manrope")
+        pol = "manrope"
+    s["texte"] = {"police": pol, "taille": num("texte", "taille", "taille du texte", 12, 10, 14),
+                  "epaisseur_texte": round(num("texte", "epaisseur_texte", "épaisseur du texte", 400, 300, 500), -2)}
+    # fenêtres
+    bg, bd, vus = "", "", set()
+    for k in ("boutons_gauche", "boutons_droite"):
+        out = ""
+        for ch in str(g("fenetres", k, "")):
+            if ch not in BOUTONS or ch in vus:
+                corr.append(f"bouton de fenêtre « {ch} » {'en double' if ch in vus else 'inconnu'}, retiré")
+                continue
+            vus.add(ch)
+            out += ch
+        bg, bd = (out, bd) if k == "boutons_gauche" else (bg, out)
+    if "X" not in vus:
+        bd += "X"
+        corr.append("bouton Fermer remis à droite (sinon impossible de fermer une fenêtre à la souris)")
+    s["fenetres"] = {"boutons_gauche": bg, "boutons_droite": bd,
+                     "coins": num("fenetres", "coins", "coins des fenêtres", s["effets"]["coins"], 0, 20),
+                     "opacite_inactive": num("fenetres", "opacite_inactive", "opacité fenêtres inactives", 100, 30, 100),
+                     "opacite_deplacement": num("fenetres", "opacite_deplacement", "opacité en déplacement", 100, 30, 100),
+                     "ombre": un("fenetres", "ombre", "ombre", OMBRES, "moyenne"),
+                     "force_ombre": num("fenetres", "force_ombre", "force de l'ombre", 50, 0, 100)}
+    s["systeme"] = {"icones": un("systeme", "icones", "pack d'icônes", ICONES, "auto"),
+                    "curseur": un("systeme", "curseur", "curseur", CURSEURS, "breeze_cursors"),
+                    "taille_curseur": num("systeme", "taille_curseur", "taille du curseur", 24, 16, 64)}
+    # fond d'écran
+    racine = Path(repo) if repo else None
+    dossier_fonds = racine / "system_files/usr/share/thomas-os/fonds" if racine else DATA / "thomas-os/fonds"
+    fond, fond_image = un("fond", "type", "type de fond", ("degrade", "uni", "image"), "degrade"), ""
+    if fond == "image":
+        src = chemin.parent / str(g("fond", "fichier", "") or "-")
+        if src.is_file():
+            dossier_fonds.mkdir(parents=True, exist_ok=True)
+            dest = dossier_fonds / f"{sid}{src.suffix.lower()}"
+            shutil.copyfile(src, dest)
+            fond_image = f"/usr/share/thomas-os/fonds/{dest.name}" if racine else str(dest)
+        else:
+            corr.append(f"image de fond « {src.name} » introuvable à côté du design → dégradé")
+            fond = "degrade"
+    # icônes du bureau
+    ic = un("bureau", "icones", "icônes du bureau", OUINON, "oui")
+    ti = num("bureau", "taille_icones", "taille des icônes", 3, 0, 5)
+    il = []
+    for a in g("bureau", "icones_liste", []) or []:
+        if a in il or a not in APPS + ["home", "trash"]:
+            corr.append(f"icône de bureau « {a} » {'en double' if a in il else 'inconnue'}, retirée")
+        else:
+            il.append(a)
+    # widgets : taille mini, dans l'écran, hors des barres, sans chevauchement, alignés sur 8 px
+    W_, H_ = ECRAN
+    reserve = T + (16 if s["barre"]["flottante"] == "oui" else 0) if s["barre"]["masquage"] == "non" else 0
+    z = [0, 24 if haut == "oui" else 0, W_, H_]
+    z[{"bas": 3, "haut": 1, "gauche": 0, "droite": 2}[bord]] += reserve if bord in ("haut", "gauche") else -reserve
+    obstacles = []
+    if ic == "oui" and il:
+        s_ic = TAILLES_ICONES[ti]
+        cw, chh = max(s_ic + 36, round(s_ic * 1.6)), s_ic + round((s["texte"]["taille"] - 2) * 4 / 3 * 2.4) + 16
+        par_col = max(1, (z[3] - z[1] - 8) // chh)
+        cols = -(-len(il) // par_col)
+        obstacles.append((z[0], z[1], z[0] + 8 + cols * cw, z[1] + 8 + min(len(il), par_col) * chh))
+    places, aligne = [], 0
+
+    def libre(r):
+        return all(r[2] + 8 <= o[0] or o[2] + 8 <= r[0] or r[3] + 8 <= o[1] or o[3] + 8 <= r[1]
+                   for o in obstacles + places)
+
+    for w in j.get("bureau", {}).get("widgets", []) or []:
+        t = w.get("type")
+        if t not in WIDGETS:
+            corr.append(f"widget inconnu « {t} » retiré")
+            continue
+        _, dl, dh, ml, mh = WIDGETS[t]
+        nom = t.replace("-", " ")
+        try:
+            x, y, l, h = (round(float(w.get(k, d)) * e) for k, d, e in
+                          (("x", 48, ex), ("y", 40, ey), ("l", dl, ex), ("h", dh, ey)))
+        except (TypeError, ValueError):
+            corr.append(f"{nom} : position illisible, remis par défaut")
+            x, y, l, h = 48, 48, dl, dh
+        if l < ml or h < mh:
+            corr.append(f"{nom} : trop petit ({l}×{h}) → au moins {ml}×{mh}")
+        l, h = min(max(l, ml), z[2] - z[0] - 16), min(max(h, mh), z[3] - z[1] - 16)
+        x2, y2 = round(x / 8) * 8, round(y / 8) * 8
+        l2, h2 = round(l / 8) * 8, round(h / 8) * 8
+        aligne += (x2, y2, l2, h2) != (x, y, l, h)
+        x, y, l, h = x2, y2, l2, h2
+        nx, ny = min(max(x, z[0] + 8), z[2] - 8 - l), min(max(y, z[1] + 8), z[3] - 8 - h)
+        if (nx, ny) != (x, y):
+            corr.append(f"{nom} : sortait de l'écran ou passait sous une barre, ramené dedans")
+        x, y = nx, ny
+        if not libre((x, y, x + l, y + h)):
+            cands = [(cx_, cy_) for cy_ in range(z[1] + 8, z[3] - 8 - h + 1, 8)
+                     for cx_ in range(z[0] + 8, z[2] - 8 - l + 1, 8)]
+            cands.sort(key=lambda p: (p[0] - x) ** 2 + (p[1] - y) ** 2)
+            ok = next((p for p in cands if libre((p[0], p[1], p[0] + l, p[1] + h))), None)
+            if ok:
+                corr.append(f"{nom} : chevauchait un autre élément, décalé de {abs(ok[0] - x) + abs(ok[1] - y)} px")
+                x, y = ok
+            else:
+                corr.append(f"{nom} : plus de place libre, laissé où il était")
+        places.append((x, y, x + l, y + h))
+        s["bureau"].setdefault("liste", []).append(f"{t} {x} {y} {l} {h}")
+    if aligne:
+        corr.append(f"{aligne} widget(s) aligné(s) sur la grille de 8 px")
+    s["bureau"] = {"horloge": "non", "fond": fond, "fond_image": fond_image, "icones": ic, "taille_icones": ti,
+                   "icones_liste": ",".join(il), "widgets": "; ".join(s["bureau"].get("liste", []))}
+    # écriture + vérification par le moteur
+    dest_dir = racine / "system_files/usr/share/thomas-os/styles" if racine else USER_DIR
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{sid}.conf"
+    cp = configparser.ConfigParser(interpolation=None)
+    cp.read_dict({sec: {k: str(v) for k, v in vals.items()} for sec, vals in s.items()})
+    with dest.open("w", encoding="utf-8") as fic:
+        fic.write(f"# Style « {s['style']['nom']} » créé avec le Studio Thomas OS (studio/designs/{chemin.name}).\n"
+                  "# Pour le changer : rouvre le Studio, ou modifie ce fichier (même format que les autres styles).\n")
+        for c_ in corr:
+            fic.write(f"# corrigé : {c_}\n")
+        fic.write("\n")
+        cp.write(fic)
+    charger(sid, perso=False, fichiers=[dest])
+    return dest, corr
+
+
+def exporter_styles(html):
+    """Recopie les styles du système dans le Studio (entre /*STYLES*/ et /*FIN*/)."""
+    st = {}
+    for f in sorted(SYS_DIR.glob("*.conf")):
+        s = charger(f.stem, perso=False)
+        st[f.stem] = {"nom": s["style"]["nom"], **s["couleurs"],
+                      **{k: s["effets"][k] for k in ("opacite", "opacite_menus", "flou", "coins", "animations")},
+                      "epaisseur": s["barre"]["epaisseur"], "disposition": s["barre"]["disposition"],
+                      **s["texte"], "horloge": s["bureau"]["horloge"]}
+    p = Path(html)
+    t = p.read_text(encoding="utf-8")
+    n = re.sub(r"/\*STYLES\*/.*?/\*FIN\*/", lambda m: "/*STYLES*/" + json.dumps(st, ensure_ascii=False) + "/*FIN*/",
+               t, count=1, flags=re.S)
+    if n == t and "/*STYLES*/" not in t:
+        raise Erreur(f"{html} : repère /*STYLES*/ absent")
+    p.write_text(n, encoding="utf-8", newline="\n")
+    print(f"{len(st)} styles recopiés dans {html}")
+
+
+def verifier_systeme():
+    """Pendant le build : tout ce que le Studio propose doit exister dans l'image."""
+    manque = []
+    plasmoides = [v[0] for v in WIDGETS.values()] + list(MENUS.values()) + PLUGINS_BARRE
+
+    for p in plasmoides:
+        if not (Path(f"/usr/share/plasma/plasmoids/{p}").is_dir()
+                or Path(f"/usr/lib64/qt6/plugins/plasma/applets/{p}.so").exists()):
+            manque.append(f"widget KDE {p}")
+    for t in [k for k in ICONES if k != "auto"]:
+        if not Path(f"/usr/share/icons/{t}/index.theme").exists():
+            manque.append(f"pack d'icônes {t}")
+    for c in CURSEURS:
+        if not Path(f"/usr/share/icons/{c}/cursors").is_dir():
+            manque.append(f"curseur {c}")
+    for a in APPS_RPM:
+        if not Path(f"/usr/share/applications/{a}.desktop").exists():
+            manque.append(f"appli {a}.desktop")
+    liste_fp = Path("/usr/share/thomas-os/flatpaks.list")
+    texte = liste_fp.read_text(encoding="utf-8") if liste_fp.exists() else ""
+    for a in APPS_FLATPAK:
+        if f"app/{a}/" not in texte:
+            manque.append(f"appli Flatpak {a} (absente de flatpaks.list)")
+    for m in manque:
+        print(f"MANQUE  {m}")
+    if any("appli " in m and ".desktop" in m for m in manque):
+        print("Fichiers .desktop présents :", " ".join(sorted(p.stem for p in Path("/usr/share/applications").glob("*.desktop")
+                                                              if re.search(r"bazaar|dolphin|konsole|code|settings", p.stem, re.I))))
+    for nom in ("translucency", "blur"):
+        trouve = list(Path("/usr/lib64/qt6/plugins/kwin/effects/plugins").glob(f"*{nom}*")) + \
+            list(Path("/usr/share/kwin/effects").glob(f"*{nom}*"))
+        print(f"{'OK' if trouve else 'ATTENTION'}      effet KWin {nom}")
+    print("OK      tout ce que propose le Studio existe" if not manque else f"{len(manque)} élément(s) manquant(s)")
+    return 1 if manque else 0
+
+
 def autotest():
     erreurs = 0
     with tempfile.TemporaryDirectory() as tmp:
@@ -414,11 +879,30 @@ def autotest():
                     n_sch, n_th, fond, js = generer(s, f.stem, Path(tmp))
                     assert (Path(tmp) / "color-schemes" / f"{n_sch}.colors").stat().st_size > 500
                     assert (Path(tmp) / "plasma/desktoptheme" / n_th / "widgets/panel-background.svg").exists()
-                    assert fond.read_bytes()[:4] == b"\x89PNG" and f'var D = "{d}"' in js
+                    assert fond.read_bytes()[:4] == b"\x89PNG" and f'"D": "{d}"' in js
                 print(f"OK      {f.stem:12} {s['style']['nom']}")
             except (Erreur, AssertionError, OSError) as e:
                 erreurs += 1
                 print(f"ERREUR  {f.stem:12} {e}")
+        # un design du Studio plein d'erreurs doit être corrigé, pas refusé
+        design = Path(tmp) / "test.json"
+        design.write_text(json.dumps({
+            "format": "thomas-os-studio", "id": "test-studio", "nom": "Test Studio",
+            "barre": {"bord": "haut", "epaisseur": 80, "barre_haut": True, "epingles": ["code", "code", "inconnue"]},
+            "fenetres": {"boutons_gauche": "MM", "boutons_droite": "IA"},
+            "fond": {"type": "image", "fichier": "absent.jpg"},
+            "bureau": {"widgets": [{"type": "meteo", "x": 2000, "y": -50, "l": 10, "h": 10},
+                                   {"type": "cpu", "x": 1700, "y": 40, "l": 300, "h": 180},
+                                   {"type": "inconnu", "x": 0, "y": 0, "l": 1, "h": 1}]}}), encoding="utf-8")
+        try:
+            dest, corr = importer(design, repo=tmp)
+            s = charger("test-studio", perso=False, fichiers=[dest])
+            generer(s, "test-studio", Path(tmp))
+            assert len(corr) >= 6, corr
+            print(f"OK      importer     design du Studio corrigé ({len(corr)} corrections)")
+        except (Erreur, AssertionError, OSError) as e:
+            erreurs += 1
+            print(f"ERREUR  importer     {e}")
     if DEFAUT not in {f.stem for f in SYS_DIR.glob('*.conf')}:
         erreurs += 1
         print(f"ERREUR  style par défaut « {DEFAUT} » absent")
@@ -440,10 +924,21 @@ def main(argv):
         elif cmd == "secours":
             appliquer(DEFAUT, None, barre=True)
             notifier("Style de base remis", "Tes fichiers de style sont gardés")
+        elif cmd == "importer" and args:
+            repo = args[args.index("--repo") + 1] if "--repo" in args else None
+            dest, corr = importer(args[0], repo)
+            print(f"Style écrit : {dest}")
+            print("Corrigé :" if corr else "Aucune correction.")
+            for c in corr:
+                print(f"  - {c}")
         elif cmd == "connexion":
             connexion()
         elif cmd == "autotest":
             return autotest()
+        elif cmd == "verifier-systeme":
+            return verifier_systeme()
+        elif cmd == "exporter-styles" and args:
+            exporter_styles(args[0])
         else:
             print(__doc__)
         return 0
