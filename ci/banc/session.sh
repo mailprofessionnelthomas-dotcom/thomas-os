@@ -23,12 +23,13 @@ EOF
     || dire "placement de la fenêtre impossible"
 }
 
-kwin_wayland --x11-display "$DISPLAY" --width 1920 --height 1080 --socket wayland-banc --no-lockscreen >/tmp/kwin.log 2>&1 &
+( QT_LOGGING_RULES='kwin_*.debug=true' kwin_wayland --x11-display "$DISPLAY" --width 1920 --height 1080 \
+    --socket wayland-banc --no-lockscreen >/tmp/kwin.log 2>&1; echo "KWin terminé, code $?" >>/tmp/kwin.log ) &
 for _ in $(seq 60); do [ -S "$XDG_RUNTIME_DIR/wayland-banc" ] && break; sleep 0.5; done
 [ -S "$XDG_RUNTIME_DIR/wayland-banc" ] || { dire "KWin ne démarre pas"; tail -40 /tmp/kwin.log; exit 1; }
 export WAYLAND_DISPLAY=wayland-banc QT_QPA_PLATFORM=wayland
 sleep 3
-pgrep -x kwin_wayland >/dev/null || { dire "KWin s'est arrêté :"; tail -30 /tmp/kwin.log; exit 1; }
+pgrep -x kwin_wayland >/dev/null || { dire "KWin s'est arrêté :"; grep -v '^$' /tmp/kwin.log | tail -30; exit 1; }
 gdbus call --session --dest org.kde.KWin --object-path /KWin --method org.kde.KWin.supportInformation 2>/dev/null \
   | sed 's/\\n/\n/g' | grep -E "KWin version|Compositing Type|OpenGL renderer string|OpenGL version string" | sed 's/^/[banc] /'
 dire "journal KWin :"; grep -v '^$' /tmp/kwin.log | tail -8

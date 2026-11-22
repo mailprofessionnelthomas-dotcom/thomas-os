@@ -49,7 +49,8 @@ jobs:
           chmod 777 sortie
           SF="$PWD/system_files"
           # SYS_NICE : kwin_wayland porte cette capacité, sans elle le conteneur refuse de le lancer
-          sudo podman run --rm --network none --cap-add SYS_NICE \
+          # --ipc host : KWin dessine dans l'écran virtuel via la mémoire partagée (pas de carte graphique)
+          sudo podman run --rm --network none --ipc host --cap-add SYS_NICE \
             -v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY=:99 \
             -v "$PWD/ci/banc:/banc:ro" -v "$PWD/sortie:/sortie" -v "$PWD/studio/designs:/designs:ro" \
             -v "$SF/usr/bin/thomas-style:/usr/bin/thomas-style:ro" \
