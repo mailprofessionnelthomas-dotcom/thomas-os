@@ -79,6 +79,8 @@ dnf5 install -y \
     python3-pip \
     git \
     papirus-icon-theme
+# Papirus sombre : paquet à part dans Fedora (nom vérifié par « thomas-style verifier-systeme » plus bas)
+dnf5 install -y papirus-icon-theme-dark || echo "ATTENTION : paquet papirus-icon-theme-dark introuvable"
 
 sed -i 's/^enabled=1/enabled=0/' /etc/yum.repos.d/vscode.repo /etc/yum.repos.d/claude-code.repo
 
@@ -216,7 +218,7 @@ done
 HOME="$(mktemp -d)" /usr/bin/thomas-style autotest
 test "$(ls /usr/share/thomas-os/styles/*.conf | wc -l)" -ge 12
 # Studio : tout ce qu'il propose (widgets, menus, icônes, curseurs, applis) doit exister dans l'image
-/usr/bin/thomas-style verifier-systeme || echo "ATTENTION : le Studio propose un élément absent (voir MANQUE ci-dessus)"
+/usr/bin/thomas-style verifier-systeme
 [[ "$(fc-list : family)" == *Manrope* ]] || { echo "ERREUR : police Manrope absente"; exit 1; }
 test -f /usr/share/plasma/plasmoids/org.thomasos.horloge/contents/ui/main.qml
 test -f /etc/xdg/autostart/thomas-style.desktop

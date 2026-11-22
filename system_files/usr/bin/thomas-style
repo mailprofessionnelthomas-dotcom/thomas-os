@@ -46,14 +46,15 @@ POLICES = {"manrope": "Manrope", "open": "Open Sans", "outfit": "Outfit", "nunit
            "plex": "IBM Plex Sans", "rajdhani": "Rajdhani", "mono": "JetBrains Mono"}
 ANIMS = {"rapides": "0.5", "normales": "1", "aucune": "0"}
 # Applis présentes dans Thomas OS (même liste que le Studio). RPM = installées dans l'image.
-APPS_RPM = ["org.kde.dolphin", "code", "org.kde.konsole", "systemsettings", "io.github.kolunmi.Bazaar"]
+APPS_RPM = ["org.kde.dolphin", "com.microsoft.VSCode", "org.kde.konsole", "systemsettings", "io.github.kolunmi.Bazaar"]
 APPS_FLATPAK = ["com.opera.opera-gx", "org.mozilla.firefox", "com.spotify.Client", "org.libreoffice.LibreOffice",
                 "org.videolan.VLC", "org.kde.gwenview", "org.kde.okular", "org.kde.kcalc", "com.github.tchx84.Flatseal",
                 "io.github.flattool.Warehouse", "io.github.DenysMb.Kontainer"]
 APPS = APPS_RPM + APPS_FLATPAK
 EPINGLES = ["org.kde.dolphin", "com.opera.opera-gx", "org.mozilla.firefox", "com.spotify.Client",
-            "code", "org.kde.konsole", "systemsettings"]
-FAVORIS = ["org.kde.dolphin", "com.opera.opera-gx", "org.mozilla.firefox", "com.spotify.Client", "code", "org.kde.konsole",
+            "com.microsoft.VSCode", "org.kde.konsole", "systemsettings"]
+FAVORIS = ["org.kde.dolphin", "com.opera.opera-gx", "org.mozilla.firefox", "com.spotify.Client", "com.microsoft.VSCode",
+           "org.kde.konsole",
            "org.libreoffice.LibreOffice", "org.videolan.VLC", "org.kde.gwenview", "org.kde.okular", "org.kde.kcalc",
            "systemsettings"]
 # Widgets du Studio -> vrais widgets KDE Plasma : (plugin, largeur, hauteur, largeur mini, hauteur mini)
@@ -860,10 +861,6 @@ def verifier_systeme():
     if any("appli " in m and ".desktop" in m for m in manque):
         print("Fichiers .desktop présents :", " ".join(sorted(p.stem for p in Path("/usr/share/applications").glob("*.desktop")
                                                               if re.search(r"bazaar|dolphin|konsole|code|settings", p.stem, re.I))))
-    for nom in ("translucency", "blur"):
-        trouve = list(Path("/usr/lib64/qt6/plugins/kwin/effects/plugins").glob(f"*{nom}*")) + \
-            list(Path("/usr/share/kwin/effects").glob(f"*{nom}*"))
-        print(f"{'OK' if trouve else 'ATTENTION'}      effet KWin {nom}")
     print("OK      tout ce que propose le Studio existe" if not manque else f"{len(manque)} élément(s) manquant(s)")
     return 1 if manque else 0
 
@@ -888,7 +885,7 @@ def autotest():
         design = Path(tmp) / "test.json"
         design.write_text(json.dumps({
             "format": "thomas-os-studio", "id": "test-studio", "nom": "Test Studio",
-            "barre": {"bord": "haut", "epaisseur": 80, "barre_haut": True, "epingles": ["code", "code", "inconnue"]},
+            "barre": {"bord": "haut", "epaisseur": 80, "barre_haut": True, "epingles": ["org.kde.konsole", "org.kde.konsole", "inconnue"]},
             "fenetres": {"boutons_gauche": "MM", "boutons_droite": "IA"},
             "fond": {"type": "image", "fichier": "absent.jpg"},
             "bureau": {"widgets": [{"type": "meteo", "x": 2000, "y": -50, "l": 10, "h": 10},
