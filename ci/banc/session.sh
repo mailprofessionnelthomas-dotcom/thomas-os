@@ -48,6 +48,7 @@ sleep 12
 photo "00-demarrage"
 
 for f in /usr/share/thomas-os/styles/*.conf; do
+  pgrep -x kwin_wayland >/dev/null || break
   id="$(basename "$f" .conf)"
   dire "style $id"
   timeout 90 thomas-style appliquer "$id" 2>&1 | tail -4
@@ -56,7 +57,7 @@ for f in /usr/share/thomas-os/styles/*.conf; do
 done
 
 for j in /designs/*.json; do
-  [ -f "$j" ] || continue
+  [ -f "$j" ] && pgrep -x kwin_wayland >/dev/null || continue
   id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id",""))' "$j")"
   [ -f "/usr/share/thomas-os/styles/$id.conf" ] || { dire "design $id : pas encore transformé en style"; continue; }
   dire "design $id"
