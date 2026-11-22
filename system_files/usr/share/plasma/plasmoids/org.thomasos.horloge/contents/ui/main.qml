@@ -23,7 +23,11 @@ PlasmoidItem {
         onTriggered: root.maintenant = new Date()
     }
 
-    fullRepresentation: ColumnLayout {
+    // collée en haut à gauche du cadre du widget (sinon Plasma la centre et elle descend)
+    fullRepresentation: Item {
+      ColumnLayout {
+        anchors.left: parent.left
+        anchors.top: parent.top
         spacing: 4
 
         Text {
@@ -64,5 +68,6 @@ PlasmoidItem {
                 styleColor: "#40000000"
             }
         }
+      }
     }
 }

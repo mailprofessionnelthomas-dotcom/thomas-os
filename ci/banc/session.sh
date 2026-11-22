@@ -38,6 +38,8 @@ gdbus call --session --dest org.kde.KWin --object-path /KWin --method org.kde.KW
   | sed 's/\\n/\n/g' | grep -E "KWin version|Compositing Type|OpenGL renderer string|OpenGL version string" | sed 's/^/[banc] /'
 dire "journal KWin :"; grep -v '^$' /tmp/kwin.log | tail -8
 
+# Catalogue des applis de KDE (sinon la barre ne trouve pas les applis épinglées) ; fait à l'ouverture d'une vraie session
+kbuildsycoca6 --noincremental >/dev/null 2>&1 || dire "catalogue des applis : échec"
 # Plasma ne crée le bureau qu'une fois les « activités » KDE lancées (dans une vraie session, systemd s'en charge)
 for d in /usr/libexec/kactivitymanagerd /usr/bin/kded6; do [ -x "$d" ] && { "$d" >/tmp/$(basename "$d").log 2>&1 & }; done
 for _ in $(seq 20); do pret org.kde.ActivityManager /ActivityManager && break; sleep 1; done

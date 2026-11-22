@@ -138,9 +138,10 @@ function chargerImg(nom,url){const im=new Image();im.onload=()=>{cacheFond=null;
 
 // ---------- géométrie (même calcul que le moteur) ----------
 const clockPx=T=>T>=40?Math.round(T*.36):Math.round(Math.min(16,T*.46));
-function largHorloge(d,T){const c=cx;c.font=FT(d,clockPx(T));const t=c.measureText('00:00').width;if(!d.barre.date)return Math.round(t+16);
- if(T>=40){c.font=FT(d,Math.round(clockPx(T)*.7));return Math.round(Math.max(t,c.measureText('22/11/2026').width)+16)}
- c.font=FT(d,clockPx(T)*.92);return Math.round(t+10+c.measureText('22/11/2026').width+16)}
+// Horloge de la barre (vu sur le vrai KDE) : avec la date, heure et date l'une sous l'autre, même dans une barre fine
+const clockPx2=T=>Math.round(Math.max(9,T*.38));
+function largHorloge(d,T){const c=cx;if(!d.barre.date){c.font=FT(d,clockPx(T));return Math.round(c.measureText('00:00').width+16)}
+ c.font=FT(d,clockPx2(T));return Math.round(Math.max(c.measureText('00:00').width,c.measureText('22/11/2026').width)+16)}
 function geo(d){const b=d.barre,T=b.epaisseur,v=b.bord==='gauche'||b.bord==='droite',g=b.flottante?8:0,haut=b.barre_haut&&b.bord!=='haut',lw=Math.round(T*1.25),gs=Math.round(T*.78);
  const ga=[{k:'kickoff',l:lw}];b.epingles.forEach((id,i)=>ga.push({k:'lanceur',i,id,l:lw}));if(b.bureaux)ga.push({k:'pager',l:Math.round(T*(v?1.6:2.6))});
  const dr=[];if(!haut){dr.push({k:'tray',l:gs*4+8});dr.push({k:'horloge',l:v?Math.round(T*1.3):largHorloge(d,T)})}if(b.afficher_bureau)dr.push({k:'montrer',l:Math.round(T*.45)});
@@ -251,8 +252,8 @@ function item(c,d,it,P){const co=d.couleurs,T=P.T,ic=Math.round(T*.68),mx=it.x+i
  case'lanceur':icone(c,it.id,mx-ic/2,my-ic/2,ic);if(it.id==='org.kde.dolphin'){const L=Math.round(ic*.45),b=d.barre.bord;c.fillStyle=co.principale;if(P.v)c.fillRect(b==='gauche'?it.x+1:it.x+it.w-3,my-L/2,2,L);else c.fillRect(mx-L/2,b==='haut'?it.y+1:it.y+it.h-3,L,2)}break;
  case'pager':for(let i=0;i<2;i++){const r=P.v?[it.x+4,it.y+3+i*(it.h-3)/2,it.w-8,(it.h-9)/2]:[it.x+3+i*(it.w-3)/2,it.y+4,(it.w-9)/2,it.h-8];rr(c,...r,2);if(!i){c.fillStyle=rgba(co.principale,.45);c.fill()}c.strokeStyle=rgba(fg,.5);c.lineWidth=1;c.stroke()}break;
  case'tray':{const gs=Math.round(T*.78),s=Math.round(Math.min(T*.55,22));['chevron','reseau','son','cloche'].forEach((k,i)=>P.v?glyphe(c,k,mx,it.y+4+gs*i+gs/2,s,fg):glyphe(c,k,it.x+4+gs*i+gs/2,my,s,fg));break}
- case'horloge':{const now=new Date(),hm=heure(),dt=now.toLocaleDateString('fr-FR');if(P.v||T>=40){const p=P.v?Math.round(T*.3):clockPx(T);texte(c,hm,mx,d.barre.date?my-p*.5:my,FT(d,p),fg,'center');if(d.barre.date)texte(c,P.v?dt.slice(0,5):dt,mx,my+p*.62,FT(d,Math.round(p*.7)),fg,'center')}
-  else{const p=clockPx(T);texte(c,hm,it.x+8,my,FT(d,p),fg);if(d.barre.date){const w=c.measureText(hm).width;texte(c,dt,it.x+18+w,my,FT(d,p*.92),fg)}}break}
+ case'horloge':{const dt=new Date().toLocaleDateString('fr-FR');if(!d.barre.date){texte(c,heure(),mx,my,FT(d,P.v?Math.round(T*.3):clockPx(T)),fg,'center');break}
+  const p=P.v?Math.round(T*.28):clockPx2(T);texte(c,heure(),mx,my-p*.55,FT(d,p),fg,'center');texte(c,P.v?dt.slice(0,5):dt,mx,my+p*.6,FT(d,p),fg,'center');break}
  case'montrer':c.fillStyle=rgba(fg,.35);if(P.v)c.fillRect(it.x+4,it.y+3,it.w-8,1);else c.fillRect(it.x+3,it.y+4,1,it.h-8);break;
  case'appmenu':{let x=it.x+6;['Dolphin','Fichier','Édition','Affichage','Aller','Outils','Aide'].forEach((m,i)=>{texte(c,m,x,my,FT(d,tpx(d),i?d.texte.epaisseur_texte:Math.min(700,d.texte.epaisseur_texte+200)),fg);x+=c.measureText(m).width+18});break}}}
 function menuDemarrer(c,d,G){const m=d.menu,co=d.couleurs,fg=co.texte,r=geoMenu(d,G),tp=tpx(d),rad=d.effets.coins,a=d.effets.opacite_menus/100,favs=m.epingles;
