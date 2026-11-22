@@ -70,6 +70,14 @@ for f in /usr/share/thomas-os/styles/*.conf; do
   timeout 90 thomas-style appliquer "$id" 2>&1 | tail -4
   sleep 7
   photo "style-$id"
+  if [ "$id" = thomas ]; then  # ce que Plasma a vraiment construit (positions des widgets, applis de la barre)
+    gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell --method org.kde.PlasmaShell.evaluateScript \
+      'desktops().forEach(function (d) { print("ecran " + JSON.stringify(screenGeometry(d.screen)));
+         d.widgets().forEach(function (w) { print("widget " + w.type + " " + JSON.stringify(w.geometry)); }); });
+       panels().forEach(function (p) { p.widgets().forEach(function (w) { w.currentConfigGroup = ["General"];
+         print("barre " + w.type + " " + (w.type.indexOf("tasks") >= 0 ? w.readConfig("launchers", "?") : "")); }); });' \
+      | sed 's/\\n/\n/g' | sed 's/^/[banc] plasma: /'
+  fi
 done
 
 for j in /designs/*.json; do
