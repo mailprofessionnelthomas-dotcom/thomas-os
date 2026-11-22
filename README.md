@@ -3,6 +3,8 @@
 Un Linux perso, basé sur [Bazzite](https://bazzite.gg) (Fedora Atomic + KDE Plasma), pensé pour remplacer Windows au quotidien :
 look façon Windows 11, zéro pub, zéro télémétrie, jeux prêts à l'emploi, et des mises à jour « incassables » (retour en arrière possible).
 
+**L'idée : optimisé, compact, fluide, épuré.** Chaque choix (applis, styles, notifications, effets) passe par ce filtre.
+
 Il s'installe sur **n'importe quel PC** (x86 64 bits, Intel ou AMD) depuis une **clé USB live** : on teste sans rien installer, puis on installe quand on veut.
 
 > 🚧 **En construction.** Les images système se construisent déjà toutes seules sur GitHub. La clé USB (ISO) arrive à une étape suivante.
