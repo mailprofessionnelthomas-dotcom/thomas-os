@@ -19,7 +19,7 @@ cp -avf /ctx/system_files/. /
 # 1b. Applis en paquets système (seulement celles qui marchent mal en Flatpak)
 #     - VS Code : en Flatpak il ne voit pas Python, Node.js ni Git du système
 #     - Claude Code : dépôt officiel d'Anthropic, canal "stable" ; mis à jour avec Thomas OS
-#     - Node.js, pip, GameMode, Git : outils système
+#     - Node.js, pip, Git : outils système
 #     Les dépôts sont désactivés après installation : les mises à jour arrivent
 #     avec l'image Thomas OS (reconstruite chaque jour), pas par dnf.
 
@@ -56,8 +56,7 @@ dnf5 install -y \
     nodejs \
     nodejs-npm \
     python3-pip \
-    git \
-    gamemode
+    git
 
 sed -i 's/^enabled=1/enabled=0/' /etc/yum.repos.d/vscode.repo /etc/yum.repos.d/claude-code.repo
 
@@ -138,10 +137,10 @@ chmod 0644 /usr/share/thomas-os/info.env
 # 5. Vérifications : si un de ces tests rate, le build s'arrête (rouge sur GitHub)
 grep -q '^NAME="Thomas OS"' "${OS_RELEASE}"
 test -s /usr/share/thomas-os/info.env
-for pkg in code claude-code nodejs nodejs-npm python3 python3-pip git gamemode steam lutris; do
+for pkg in code claude-code nodejs nodejs-npm python3 python3-pip git; do
     rpm -q "${pkg}" >/dev/null || { echo "ERREUR : paquet ${pkg} absent"; exit 1; }
 done
-for cmd in claude code node npm python3 pip3 git gamemoderun; do
+for cmd in claude code node npm python3 pip3 git; do
     command -v "${cmd}" >/dev/null || { echo "ERREUR : commande ${cmd} introuvable"; exit 1; }
 done
 test "$(grep -c '^\[Flatpak Preinstall ' "${PREINSTALL}")" -eq "$(grep -Evc '^[[:space:]]*(#|$)' "${FLATPAK_LIST}")"
