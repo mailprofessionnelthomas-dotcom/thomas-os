@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Thomas OS : style
+Comment=Premier démarrage : met le style par défaut. Ensuite : vérifie juste les effets, ne change rien.
+Exec=thomas-style connexion
+Icon=thomas-os
+OnlyShowIn=KDE;
+NoDisplay=true
+X-KDE-autostart-phase=2

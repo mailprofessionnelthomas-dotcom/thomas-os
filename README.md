@@ -42,6 +42,16 @@ Thomas OS installe le strict utile : chacun ajoute ses jeux et ses applis depuis
 
 **Ce qui ne marchera pas sous Linux :** FACEIT et les jeux à anti-cheat noyau (Valorant…). Sober (Roblox) n'est pas officiel : Roblox peut le bloquer. Roblox Studio via Vinegar est instable : garde Windows pour ça.
 
+## Styles
+
+12 styles intégrés, changeables à tout moment : **Thomas OS** (par défaut : base Windows 11, rouge et noir, barre très transparente, police Manrope fine), Liquid Glass, Glassmorphism, Fluent / Windows 11, macOS, Material You, Catppuccin, Nord, Dracula, Néon / Gaming, Minimal, Performance. 4 barres des tâches : Windows 11, macOS (barre en haut + dock), flottante, verticale. Une horloge de bureau (salut + heure + date) façon écran de télé.
+
+- **Partie de base** : menu → *Styles Thomas OS* (choisir le style et la barre).
+- **Partie code** : chaque style est un petit fichier texte ([`system_files/usr/share/thomas-os/styles/`](system_files/usr/share/thomas-os/styles/)). Clic droit sur *Styles Thomas OS* → *Modifier le code du style*, ou `thomas-style code`. Ta version va dans `~/.config/thomas-os/styles/` et passe avant celle du système. Tout KDE reste aussi modifiable comme sur n'importe quel Linux.
+- **Secours** : clic droit → *Revenir au style de base*, ou `thomas-style secours` dans un terminal. Tes fichiers ne sont pas effacés.
+- **Les mises à jour ne touchent jamais ton style** : il est appliqué une seule fois (premier démarrage ou quand tu le choisis), puis recopié en entier dans `~/.config/thomas-os/actuel.conf`.
+- Si un effet (coins arrondis) ne marche pas avec une nouvelle version de KDE, Thomas OS reste utilisable et te prévient par une petite notification.
+
 ## Mises à jour : 2 canaux
 
 | Canal | Qui | Ce qu'il reçoit |

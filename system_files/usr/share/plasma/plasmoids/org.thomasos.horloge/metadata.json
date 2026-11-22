@@ -1,0 +1,14 @@
+{
+    "KPlugin": {
+        "Authors": [{ "Name": "Thomas OS" }],
+        "Category": "Date and Time",
+        "Description": "Salut, heure et date sur le bureau, façon écran de télé",
+        "Icon": "preferences-system-time",
+        "Id": "org.thomasos.horloge",
+        "License": "GPL-3.0",
+        "Name": "Horloge Thomas OS",
+        "Version": "1.0"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

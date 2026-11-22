@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=Styles Thomas OS
+Comment=Choisir le style et la barre des tâches, ou modifier le code du style
+Exec=thomas-style choisir
+Icon=thomas-os
+Categories=Settings;DesktopSettings;
+Keywords=style;thème;couleurs;barre;police;apparence;
+Actions=code;secours;
+
+[Desktop Action code]
+Name=Modifier le code du style
+Exec=thomas-style code
+
+[Desktop Action secours]
+Name=Revenir au style de base (secours)
+Exec=thomas-style secours

@@ -110,6 +110,38 @@ systemctl enable thomas-flatpak-preinstall.timer
 #     KDE n'envoie rien par défaut ; on le fixe quand même (/etc/xdg/PlasmaUserFeedback).
 systemctl mask rpm-ostree-countme.timer rpm-ostree-countme.service
 
+# 1e. Styles Thomas OS (thomas-style + 12 styles + horloge de bureau)
+#     Polices libres (licence OFL) depuis le dépôt officiel Google Fonts
+FONT_DIR=/usr/share/fonts/thomas-os
+LIC_DIR=/usr/share/licenses/thomas-os-fonts
+install -d "${FONT_DIR}" "${LIC_DIR}"
+GF=https://raw.githubusercontent.com/google/fonts/main/ofl
+for f in "manrope/Manrope[wght].ttf" "opensans/OpenSans[wdth,wght].ttf" "outfit/Outfit[wght].ttf" \
+    "nunito/Nunito[wght].ttf" "ibmplexsans/IBMPlexSans[wdth,wght].ttf" "jetbrainsmono/JetBrainsMono[wght].ttf" \
+    "rajdhani/Rajdhani-Light.ttf" "rajdhani/Rajdhani-Regular.ttf" "rajdhani/Rajdhani-Medium.ttf" "rajdhani/Rajdhani-Bold.ttf"; do
+    url="${GF}/${f//\[/%5B}"
+    url="${url//\]/%5D}"
+    curl --retry 3 -fsSL "${url}" -o "${FONT_DIR}/$(basename "${f}" | tr -d '[]' | tr ',' '-')"
+done
+for fam in manrope opensans outfit nunito ibmplexsans jetbrainsmono rajdhani; do
+    curl --retry 3 -fsSL "${GF}/${fam}/OFL.txt" -o "${LIC_DIR}/${fam}-OFL.txt"
+done
+fc-cache -f "${FONT_DIR}"
+
+#     Coins arrondis des fenêtres (KDE Rounded Corners). Optionnel : si le paquet ne
+#     s'installe pas pour cette version de KDE, Thomas OS marche sans (coins Breeze).
+if dnf5 -y copr enable matinlotfali/KDE-Rounded-Corners && dnf5 -y install kwin-effect-roundcorners; then
+    echo "Coins arrondis : installés"
+else
+    echo "::warning::Coins arrondis indisponibles pour cette version de KDE (Thomas OS marche sans)"
+fi
+dnf5 -y copr disable matinlotfali/KDE-Rounded-Corners || true
+
+#     Fenêtres de choix (partie de base de Styles Thomas OS)
+rpm -q kdialog >/dev/null || dnf5 -y install kdialog
+chmod 0755 /usr/bin/thomas-style
+gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+
 # 2. Nom de l'OS : "Thomas OS" partout où le système affiche son nom.
 #    On garde ID=, ID_LIKE= et VERSION_ID= de Bazzite pour que ses outils continuent de marcher.
 OS_RELEASE=/usr/lib/os-release
@@ -176,6 +208,15 @@ test "$(grep -c '^\[Flatpak Preinstall ' "${PREINSTALL}")" -eq "$(grep -Evc '^[[
 flatpak preinstall --help >/dev/null
 test -L /etc/systemd/system/timers.target.wants/thomas-flatpak-preinstall.timer
 test "$(readlink /etc/systemd/system/rpm-ostree-countme.timer)" = "/dev/null"
+# Styles : les 12 styles se génèrent sans erreur, les polices et l'horloge sont là
+for cmd in thomas-style kwriteconfig6 plasma-apply-colorscheme plasma-apply-desktoptheme gdbus notify-send kdialog; do
+    command -v "${cmd}" >/dev/null || { echo "ERREUR : commande ${cmd} introuvable"; exit 1; }
+done
+HOME="$(mktemp -d)" /usr/bin/thomas-style autotest
+test "$(ls /usr/share/thomas-os/styles/*.conf | wc -l)" -eq 12
+fc-list | grep -q "Manrope" || { echo "ERREUR : police Manrope absente"; exit 1; }
+test -f /usr/share/plasma/plasmoids/org.thomasos.horloge/contents/ui/main.qml
+test -f /etc/xdg/autostart/thomas-style.desktop
 case "${GPU_VARIANT}" in
     amd-intel) ;;
     nvidia | nvidia-legacy)
