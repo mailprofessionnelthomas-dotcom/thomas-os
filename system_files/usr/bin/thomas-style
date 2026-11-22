@@ -363,13 +363,19 @@ desktops().forEach(function (d) {
   d.wallpaperPlugin = "org.kde.image";
   d.currentConfigGroup = ["Wallpaper", "org.kde.image", "General"];
   d.writeConfig("Image", C.FOND);
-  C.GERES.forEach(function (n) { d.widgets(n).forEach(function (x) { x.remove(); }); });
   var sx = 1, sy = 1;
   try { var g = screenGeometry(d.screen); if (g.width > 0) { sx = g.width / 1920; sy = g.height / 1080; } } catch (e) {}
+  // On déplace les widgets déjà là (un widget enlevé reste un moment : Plasma poserait le nouveau à côté)
+  var dispo = {};
+  C.GERES.forEach(function (n) { dispo[n] = d.widgets(n); });
   C.WIDGETS.forEach(function (x) {
-    var a = d.addWidget(x[0], Math.round(x[1] * sx), Math.round(x[2] * sy), Math.round(x[3] * sx), Math.round(x[4] * sy));
-    if (a) for (var k in x[5]) cfg(a, k, x[5][k]);
+    var X = Math.round(x[1] * sx), Y = Math.round(x[2] * sy), L = Math.round(x[3] * sx), H2 = Math.round(x[4] * sy);
+    var a = dispo[x[0]].length ? dispo[x[0]].shift() : d.addWidget(x[0], X, Y, L, H2);
+    if (!a) return;
+    try { a.geometry = new QRectF(X, Y, L, H2); } catch (e) { try { a.geometry = {x: X, y: Y, width: L, height: H2}; } catch (e2) {} }
+    for (var k in x[5]) cfg(a, k, x[5][k]);
   });
+  C.GERES.forEach(function (n) { dispo[n].forEach(function (x) { x.remove(); }); });
   d.currentConfigGroup = ["General"];
   d.writeConfig("iconSize", C.ICONES.taille);
   d.writeConfig("filterMode", C.ICONES.afficher ? 0 : 2);
@@ -387,7 +393,8 @@ def script_barre(s, fond):
         "B": {"bord": b["bord"], "flottante": b["flottante"] == "oui", "longueur": b["longueur"],
               "alignement": b["alignement"], "masquage": b["masquage"], "bureaux": b["bureaux"] == "oui",
               "montrer": b["afficher_bureau"] == "oui", "date": b["date"] == "oui", "haut": b["barre_haut"] == "oui"},
-        "LANCEURS": ",".join(f"applications:{a}.desktop" for a in liste(b["epingles"])),
+        # une vraie liste (pas un texte « a,b,c » : KDE n'y verrait qu'une seule appli inconnue, vu sur le banc)
+        "LANCEURS": [f"applications:{a}.desktop" for a in liste(b["epingles"])],
         "MENU": {"plugin": MENUS[m["type"]], "largeur": int(m["largeur"]), "hauteur": int(m["hauteur"]),
                  "liste": m["favoris"] == "liste", "droite": m["cote"] == "droite",
                  "favoris": [f"applications:{a}.desktop" for a in liste(m["epingles"])]},
