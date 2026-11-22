@@ -1,0 +1,6 @@
+# Fichiers texte toujours en fin de ligne Linux (LF), même édités depuis Windows :
+# les scripts bash et le Containerfile cassent avec des fins de ligne Windows (CRLF).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.iso binary
