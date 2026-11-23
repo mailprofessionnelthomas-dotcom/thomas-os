@@ -25,11 +25,16 @@ demarrage)
     if [[ "$(readlink -f /etc/systemd/system/rpm-ostree-countme.timer)" == /dev/null ]]; then ok "télémétrie Fedora coupée"; else ko "compteur Fedora actif"; fi
     ;;
 preparer)
-    # compte de test + ouverture de session automatique, puis redémarrage (SDDM ne la fait qu'au démarrage)
+    # compte de test + ouverture de session automatique, puis redémarrage (elle ne se fait qu'au démarrage).
+    # Bazzite utilise Plasma Login Manager (constaté), un dérivé de SDDM : même format de config.
     id testeur >/dev/null 2>&1 || useradd -m -G wheel testeur
     echo "testeur:${MDP}" | chpasswd
-    mkdir -p /etc/sddm.conf.d
-    printf "[Autologin]\nUser=testeur\nSession=plasma\n" >/etc/sddm.conf.d/zz-test-vm.conf
+    info "gestionnaire de connexion : $(systemctl show -p ExecStart --value display-manager | grep -o 'path=[^ ;]*' | head -1)"
+    info "ses fichiers : $(find /etc /usr/lib /usr/share -maxdepth 2 -iname '*plasmalogin*' 2>/dev/null | tr '\n' ' ')"
+    for d in /etc/plasmalogin.conf.d /etc/sddm.conf.d; do
+        mkdir -p "${d}"
+        printf "[Autologin]\nUser=testeur\nSession=plasma\n" >"${d}/zz-test-vm.conf"
+    done
     systemd-run --on-active=3 systemctl reboot >/dev/null && ok "redémarrage demandé"
     ;;
 session)
