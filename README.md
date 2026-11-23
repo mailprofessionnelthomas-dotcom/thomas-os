@@ -67,7 +67,7 @@ Un éditeur visuel pour créer ses styles à la souris, sans rien installer : ou
 
 | Canal | Qui | Ce qu'il reçoit |
 |---|---|---|
-| `testing` | le PC de Thomas | chaque nouvelle version qui a passé les vérifications (et les simulations en VM, bientôt) |
+| `testing` | le PC de Thomas | chaque nouvelle version qui a passé les vérifications et le test de démarrage en machine virtuelle |
 | `stable` | tous les autres PC (c'est le canal installé par la clé USB) | seulement les versions que Thomas a validées |
 
 1. **Une nouvelle version** arrive toute seule (mise à jour de Bazzite, tous les jours) ou après une modification du repo : GitHub la construit, la vérifie, puis la publie sur `testing`. Le PC de Thomas la télécharge en fond et l'applique au redémarrage suivant.

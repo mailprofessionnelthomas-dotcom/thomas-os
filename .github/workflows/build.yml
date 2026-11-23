@@ -3,7 +3,7 @@
 #
 # Chemin d'une mise à jour :
 #   1. build      : construit les 3 images, chacune publiée sous un numéro de version unique (ex. 20261122.5)
-#   2. (étape 7)  : simulations en machine virtuelle sur cette version
+#   2. vm_test    : la version est installée et démarrée dans une machine virtuelle (vm-test.yml)
 #   3. testing    : si tout est vert, la version devient "testing" (le canal du PC de Thomas)
 #   4. stable     : UNIQUEMENT à la main, avec le workflow "Passer en stable" (promote-stable.yml)
 # Ce workflow ne touche JAMAIS au canal "stable".
@@ -23,7 +23,9 @@ on:
       - 'captures/**'
       - 'studio/**'
       - 'ci/banc/**'
+      - 'ci/vm/**'
       - '.github/workflows/captures.yml'
+      - '.github/workflows/vm-test.yml'
   workflow_dispatch:
 
 env:
@@ -199,7 +201,17 @@ jobs:
           # use old bundle format, so we can use newer cosign 3.X.X instead of 2.X.X
           cosign sign -y --new-bundle-format=false --use-signing-config=false ${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}
 
-  # Étape 7 : le job "simulations" (machine virtuelle) viendra ici, entre build_push et publish_testing.
+  # Test de démarrage : installe la version sur le disque d'une VM, la démarre, ouvre une 1re session.
+  # S'il échoue, la version n'est PAS publiée sur testing (règle : tester en VM avant le matériel réel).
+  vm_test:
+    name: Test de démarrage (VM)
+    needs: [prepare, build_push]
+    if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/vm-test.yml
+    with:
+      image_tag: ${{ needs.prepare.outputs.version }}
 
   # Banc d'essai : photos du vrai bureau KDE (chaque style + chaque design du Studio). Ne bloque rien.
   captures:
@@ -214,7 +226,7 @@ jobs:
 
   publish_testing:
     name: Publier sur le canal test
-    needs: [prepare, check_apps, build_push]
+    needs: [prepare, check_apps, build_push, vm_test]
     if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-26.04
     permissions:
