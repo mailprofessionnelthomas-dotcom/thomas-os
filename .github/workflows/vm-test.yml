@@ -62,16 +62,14 @@ jobs:
 
           [customizations.kernel]
           append = "systemd.wants=sshd.service"
-
-          [[customizations.filesystem]]
-          mountpoint = "/"
-          minsize = "40 GiB"
           EOF
 
       # Lancé à la main (pas l'action toute faite) : sur Ubuntu, AppArmor bloque les montages de l'outil
       # → apparmor=unconfined pour ce conteneur de construction uniquement.
       - name: Disque de la VM (bootc-image-builder)
         run: |
+          # Ubuntu interdit les « espaces de noms » utilisateur dont osbuild a besoin : levé sur ce runner jetable
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           sudo podman pull -q "${IMAGE}"
           mkdir -p sortie
           sudo podman run --rm --privileged --pull=newer \
