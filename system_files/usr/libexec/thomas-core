@@ -1,0 +1,176 @@
+#!/usr/bin/python3
+"""Thomas Core : service D-Bus de session « org.thomasos.Core » (voir docs/ARCHITECTURE.md §3).
+
+Lancé à la demande par D-Bus, il s'arrête tout seul après 60 s sans appel : il ne coûte rien au repos.
+Interfaces v1 : org.thomasos.Systeme1 (infos, carte graphique), org.thomasos.Style1 (styles),
+org.thomasos.Diagnostic1 (rapport). Les applis Thomas OS passent par lui, jamais directement par KDE.
+Transition : le moteur de styles reste /usr/bin/thomas-style, chargé ici comme bibliothèque.
+"""
+import importlib.machinery
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+from gi.repository import Gio, GLib
+
+NOM, CHEMIN = "org.thomasos.Core", "/org/thomasos/Core"
+INACTIF_S = int(os.environ.get("THOMAS_CORE_INACTIF", "60"))
+STYLE = importlib.machinery.SourceFileLoader(
+    "thomas_style", os.environ.get("THOMAS_STYLE_BIN", "/usr/bin/thomas-style")).load_module()
+INFO_ENV = Path("/usr/share/thomas-os/info.env")
+FABRICANTS = {"0x10de": "nvidia", "0x1002": "amd", "0x8086": "intel"}
+
+XML = """<node>
+  <interface name="org.thomasos.Systeme1">
+    <method name="Infos"><arg type="a{ss}" direction="out"/></method>
+    <method name="CarteGraphique"><arg type="a{ss}" direction="out"/></method>
+  </interface>
+  <interface name="org.thomasos.Style1">
+    <method name="Liste"><arg type="a(ss)" direction="out"/></method>
+    <method name="Actuel"><arg type="s" direction="out"/></method>
+    <method name="Appliquer"><arg name="id" type="s" direction="in"/><arg name="disposition" type="s" direction="in"/></method>
+    <method name="Secours"/>
+    <signal name="StyleChange"><arg name="id" type="s"/></signal>
+  </interface>
+  <interface name="org.thomasos.Diagnostic1">
+    <method name="Rapport"><arg type="s" direction="out"/></method>
+  </interface>
+</node>"""
+
+
+def lire_env():
+    infos = {}
+    if INFO_ENV.exists():
+        for ligne in INFO_ENV.read_text(encoding="utf-8").splitlines():
+            if "=" in ligne:
+                k, v = ligne.split("=", 1)
+                infos[k.replace("THOMAS_OS_", "").lower()] = v
+    return infos
+
+
+def commande(*cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=20).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def infos():
+    i = lire_env()
+    i.setdefault("version", "?")
+    try:  # canal suivi par les mises à jour (rpm-ostree répond sans être root)
+        st = json.loads(commande("rpm-ostree", "status", "--json", "--booted") or "{}")
+        ref = st.get("deployments", [{}])[0].get("container-image-reference", "")
+        i["image_suivie"] = ref.split(":", 1)[-1] if ref else "?"
+        i["canal"] = ref.rsplit(":", 1)[-1] if ":" in ref else "?"
+    except (ValueError, IndexError):
+        i["canal"] = "?"
+    return i
+
+
+def carte_graphique():
+    """Carte(s) détectée(s) et variante installée : l'écran de bienvenue en déduit s'il faut changer."""
+    trouves = []
+    for v in Path("/sys/class/drm").glob("card[0-9]*/device/vendor"):
+        f = FABRICANTS.get(v.read_text().strip())
+        if f and f not in trouves:
+            trouves.append(f)
+    variante = lire_env().get("gpu_variant", "?")
+    nvidia = "nvidia" in trouves
+    conforme = (variante.startswith("nvidia") and nvidia) or (variante == "amd-intel" and not nvidia)
+    conseil = "" if conforme else ("thomas-os-nvidia (ou -nvidia-legacy pour GTX 900/1000)" if nvidia else "thomas-os")
+    return {"detectees": ",".join(trouves) or "inconnue", "variante": variante,
+            "conforme": "oui" if conforme else "non", "conseil": conseil}
+
+
+def rapport():
+    lignes = [f"Thomas OS {lire_env().get('version', '?')}"]
+    for nom, cmd in (("système", ["systemctl", "--failed", "--no-legend", "--plain"]),
+                     ("session", ["systemctl", "--user", "--failed", "--no-legend", "--plain"])):
+        echecs = [l.split()[0] for l in commande(*cmd).splitlines() if l.strip()]
+        lignes.append(f"Services en échec ({nom}) : {', '.join(echecs) if echecs else 'aucun'}")
+    for point in ("/", "/var/home"):
+        if os.path.exists(point):
+            u = shutil.disk_usage(point)
+            lignes.append(f"Disque {point} : {u.used * 100 // max(u.total, 1)} % utilisé, {u.free // 2**30} Go libres")
+    temps = []
+    for t in Path("/sys/class/hwmon").glob("hwmon*/temp*_input"):
+        try:
+            temps.append(int(t.read_text()) / 1000)
+        except (OSError, ValueError):
+            pass
+    lignes.append(f"Température la plus haute : {max(temps):.0f} °C" if temps else "Températures : capteurs non disponibles")
+    return "\n".join(lignes)
+
+
+class Service:
+    def __init__(self):
+        self.boucle = GLib.MainLoop()
+        self.minuterie = None
+        self.connexion = None
+        self.rearmer()
+
+    def rearmer(self):
+        if self.minuterie:
+            GLib.source_remove(self.minuterie)
+        self.minuterie = GLib.timeout_add_seconds(INACTIF_S, self.boucle.quit)
+
+    def appliquer(self, sid, dispo):
+        args = [os.environ.get("THOMAS_STYLE_BIN", "/usr/bin/thomas-style"), "appliquer", sid] + ([dispo] if dispo else [])
+        pid, *_ = GLib.spawn_async(args, flags=GLib.SpawnFlags.DO_NOT_REAP_CHILD)
+        GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, lambda *_: self.signaler(sid))
+
+    def signaler(self, sid):
+        self.connexion.emit_signal(None, CHEMIN, "org.thomasos.Style1", "StyleChange", GLib.Variant("(s)", (sid,)))
+
+    def appel(self, conn, expediteur, chemin, interface, methode, params, invocation):
+        self.rearmer()
+        try:
+            if methode == "Infos":
+                rep = GLib.Variant("(a{ss})", (infos(),))
+            elif methode == "CarteGraphique":
+                rep = GLib.Variant("(a{ss})", (carte_graphique(),))
+            elif methode == "Liste":
+                rep = GLib.Variant("(a(ss))", (STYLE.lister(),))
+            elif methode == "Actuel":
+                rep = GLib.Variant("(s)", (STYLE.actuel_id(),))
+            elif methode == "Appliquer":
+                sid, dispo = params.unpack()
+                STYLE.charger(sid)  # refuse tout de suite un style inconnu ou mal écrit
+                if dispo and dispo not in STYLE.DISPOS:
+                    raise STYLE.Erreur(f"disposition inconnue : {dispo}")
+                self.appliquer(sid, dispo)
+                rep = None
+            elif methode == "Secours":
+                self.appliquer(STYLE.DEFAUT, "")
+                rep = None
+            elif methode == "Rapport":
+                rep = GLib.Variant("(s)", (rapport(),))
+            else:
+                raise STYLE.Erreur(f"méthode inconnue : {methode}")
+            invocation.return_value(rep)
+        except STYLE.Erreur as e:
+            invocation.return_dbus_error("org.thomasos.Core.Erreur", str(e))
+
+    def lancer(self):
+        noeud = Gio.DBusNodeInfo.new_for_xml(XML)
+
+        def acquis(conn, nom):
+            self.connexion = conn
+            for i in noeud.interfaces:
+                conn.register_object(CHEMIN, i, self.appel, None, None)
+
+        Gio.bus_own_name(Gio.BusType.SESSION, NOM, Gio.BusNameOwnerFlags.NONE, acquis, None,
+                         lambda *_: self.boucle.quit())
+        self.boucle.run()
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--test":  # sans D-Bus : affiche ce que le service répondrait
+        print(json.dumps({"infos": infos(), "carte": carte_graphique()}, ensure_ascii=False, indent=1))
+        print(rapport())
+        sys.exit(0)
+    Service().lancer()

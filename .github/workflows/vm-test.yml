@@ -110,6 +110,13 @@ jobs:
           sleep 3
           python3 ci/vm/photo.py /tmp/qemu-mon resultats/4-menu.png
 
+      - name: Thomas Core et Thomas Control
+        run: |
+          bash ci/vm/dans-la-vm.sh core | tee -a resultats/rapport.txt
+          bash ci/vm/dans-la-vm.sh control | tee -a resultats/rapport.txt
+          sleep 2
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/5-thomas-control.png
+
       - name: Installation automatique des applis (information)
         continue-on-error: true
         timeout-minutes: 15
