@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Logo Thomas OS : un T géométrique rouge (barre en trapèze + jambe en pointe), lisible dès 16 px.
+       Mêmes points que identite/fond.py (T du fond d'écran). -->
+  <title>Thomas OS</title>
+  <path fill="#ff0000" d="M6.4 9 H57.6 L53.8 19.2 H10.2 Z"/>
+  <path fill="#ff0000" d="M26.2 23 H37.8 V49.9 L32 57.6 L26.2 49.9 Z"/>
+</svg>

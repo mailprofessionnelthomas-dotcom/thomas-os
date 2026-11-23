@@ -154,6 +154,11 @@ else
 fi
 dnf5 -y copr disable matinlotfali/KDE-Rounded-Corners || true
 
+#     Identité visuelle (identite/) : jetons de design, logo T, fond d'écran fabriqué ici (Python standard)
+install -D -m 0644 /ctx/identite/tokens.json /usr/share/thomas-os/identite/tokens.json
+install -D -m 0644 /ctx/identite/logo/thomas-os.svg /usr/share/icons/hicolor/scalable/apps/thomas-os.svg
+install -D -m 0644 /ctx/identite/logo/thomas-os.svg /usr/share/thomas-os/identite/logo/thomas-os.svg
+python3 /ctx/identite/fond.py /usr/share/wallpapers/ThomasOS
 #     Fenêtres de choix (partie de base de Styles Thomas OS)
 rpm -q kdialog >/dev/null || dnf5 -y install kdialog
 chmod 0755 /usr/bin/thomas-style
@@ -234,6 +239,24 @@ for cmd in thomas-style kwriteconfig6 plasma-apply-colorscheme plasma-apply-desk
 done
 HOME="$(mktemp -d)" /usr/bin/thomas-style autotest
 test "$(ls /usr/share/thomas-os/styles/*.conf | wc -l)" -ge 12
+# Identité : fond d'écran présent, et le style par défaut utilise bien les jetons de design (une seule source)
+test -s /usr/share/wallpapers/ThomasOS/contents/images/2560x1440.png
+python3 - <<'EOF'
+import configparser, json
+j = json.load(open("/usr/share/thomas-os/identite/tokens.json", encoding="utf-8"))
+c = configparser.ConfigParser(interpolation=None)
+c.read("/usr/share/thomas-os/styles/thomas.conf", encoding="utf-8")
+attendu = {("couleurs", "principale"): j["couleurs"]["rouge"], ("couleurs", "bordure"): j["couleurs"]["rouge"],
+           ("couleurs", "barre"): j["couleurs"]["noir"], ("couleurs", "fenetres"): j["couleurs"]["anthracite"],
+           ("couleurs", "texte"): j["couleurs"]["blanc"], ("effets", "coins"): str(j["rayons"]["barre"]),
+           ("effets", "coins_menus"): str(j["rayons"]["menus"]), ("fenetres", "coins"): str(j["rayons"]["fenetres"]),
+           ("effets", "opacite"): str(j["opacites"]["barre"]), ("effets", "opacite_menus"): str(j["opacites"]["menus"]),
+           ("barre", "epaisseur"): str(j["barre"]["epaisseur"])}
+ecarts = [f"{s}.{k} = {c.get(s, k)} (jeton : {v})" for (s, k), v in attendu.items() if c.get(s, k).lower() != v.lower()]
+if ecarts:
+    raise SystemExit("ERREUR : thomas.conf ne suit pas identite/tokens.json : " + " ; ".join(ecarts))
+print("OK      style par défaut = jetons de design")
+EOF
 # Studio : tout ce qu'il propose (widgets, menus, icônes, curseurs, applis) doit exister dans l'image
 /usr/bin/thomas-style verifier-systeme
 [[ "$(fc-list : family)" == *Manrope* ]] || { echo "ERREUR : police Manrope absente"; exit 1; }
