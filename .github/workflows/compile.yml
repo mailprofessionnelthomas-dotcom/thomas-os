@@ -1,0 +1,31 @@
+---
+# Compilation rapide des applis Thomas OS (apps/), sans construire toute l'image :
+# même étape « compilation » que le Containerfile, donc mêmes versions de Qt et de KDE que le système.
+name: Compiler les applis
+on:
+  push:
+    paths:
+      - 'apps/**'
+      - 'Containerfile'
+      - '.github/workflows/compile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compiler:
+    name: Compiler les applis
+    runs-on: ubuntu-26.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Maximize build space
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
+
+      - name: Compiler (étape « compilation » du Containerfile)
+        run: |
+          podman build --target compilation -t thomas-os-compilation -f Containerfile .
+          podman run --rm thomas-os-compilation find /sortie -type f | sed 's/^/compilé : /'

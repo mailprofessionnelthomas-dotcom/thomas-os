@@ -72,12 +72,37 @@ menu)
     runuser -u testeur -- env DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" gdbus call --session --dest org.kde.plasmashell \
         --object-path /PlasmaShell --method org.kde.PlasmaShell.activateLauncherMenu >/dev/null && ok "menu ouvert"
     ;;
+core)
+    # Thomas Core : répond à la demande, puis s'arrête seul au repos
+    u="$(id -u testeur)"
+    appel() { runuser -u testeur -- env DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" gdbus call --session \
+        --dest org.thomasos.Core --object-path /org/thomasos/Core --method "$1" 2>&1; }
+    r="$(appel org.thomasos.Systeme1.Infos)"
+    if [[ "${r}" == *version* ]]; then ok "Thomas Core répond"; info "${r:0:300}"; else ko "Thomas Core ne répond pas : ${r:0:200}"; fi
+    r="$(appel org.thomasos.Style1.Liste)"
+    if [[ "${r}" == *thomas* ]]; then ok "Thomas Core liste les styles"; else ko "liste des styles : ${r:0:200}"; fi
+    info "carte graphique : $(appel org.thomasos.Systeme1.CarteGraphique | head -c 200)"
+    info "diagnostic : $(appel org.thomasos.Diagnostic1.Rapport | head -c 300)"
+    sleep 75
+    if pgrep -u testeur -f /usr/libexec/thomas-core >/dev/null; then ko "Thomas Core tourne encore après 75 s sans appel"
+    else ok "Thomas Core s'arrête seul au repos"; fi
+    ;;
+control)
+    # Thomas Control : s'ouvre, reste ouvert, sans erreur QML
+    u="$(id -u testeur)"
+    E=(XDG_RUNTIME_DIR="/run/user/${u}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" WAYLAND_DISPLAY=wayland-0 QT_QPA_PLATFORM=wayland)
+    runuser -u testeur -- env "${E[@]}" thomas-control >/tmp/control.log 2>&1 &
+    sleep 6
+    if pgrep -u testeur -x thomas-control >/dev/null; then ok "Thomas Control ouvert"; else ko "Thomas Control s'est fermé :"; tail -8 /tmp/control.log | sed 's/^/INFO    /'; fi
+    e="$(grep -iE 'qml|error|warning' /tmp/control.log | grep -v 'Qt Quick Layouts' | sort -u | tail -6)"
+    if [[ -z "${e}" ]]; then ok "aucune erreur QML dans Thomas Control"; else ko "messages de Thomas Control :"; echo "${e}" | sed 's/^/INFO    /'; fi
+    ;;
 applis)
     for _ in $(seq 72); do [[ -n "$(systemctl show -p ExecMainExitTimestamp --value thomas-flatpak-preinstall.service)" ]] && break; sleep 10; done
     info "service des applis : $(systemctl show -p Result --value thomas-flatpak-preinstall.service)"
     info "applis Flatpak installées : $(flatpak list --app --columns=application | tr '\n' ' ')"
     ;;
 *)
-    echo "usage : verifier.sh demarrage|preparer|session|situation|menu|applis"; exit 2 ;;
+    echo "usage : verifier.sh demarrage|preparer|session|situation|menu|core|control|applis"; exit 2 ;;
 esac
 exit $((erreurs > 0))

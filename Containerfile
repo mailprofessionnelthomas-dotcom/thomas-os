@@ -8,6 +8,18 @@
 
 ARG BASE_IMAGE="ghcr.io/ublue-os/bazzite:stable"
 
+# Applis Thomas OS (apps/) compilées à part, à partir de la MÊME image : mêmes versions de Qt et de KDE.
+# Seuls les programmes compilés passent dans l'image finale, jamais les outils de développement.
+FROM ${BASE_IMAGE} AS compilation
+COPY apps /apps
+RUN dnf5 install -y --setopt=install_weak_deps=False cmake gcc-c++ qt6-qtbase-devel qt6-qtdeclarative-devel && \
+    for app in /apps/*/; do \
+        nom="$(basename "${app}")" && \
+        cmake -S "${app}" -B "/tmp/build/${nom}" -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release && \
+        cmake --build "/tmp/build/${nom}" -j"$(nproc)" && \
+        DESTDIR=/sortie cmake --install "/tmp/build/${nom}" || exit 1; \
+    done
+
 # Les scripts de construction sont montés pendant le build, sans être copiés dans l'image finale
 FROM scratch AS ctx
 COPY build_files /
@@ -21,6 +33,8 @@ ARG IMAGE_NAME="thomas-os"
 ARG IMAGE_VENDOR="mailprofessionnelthomas-dotcom"
 ARG IMAGE_VERSION="dev"
 ARG GPU_VARIANT="amd-intel"
+
+COPY --from=compilation /sortie/usr /usr
 
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=cache,dst=/var/cache \

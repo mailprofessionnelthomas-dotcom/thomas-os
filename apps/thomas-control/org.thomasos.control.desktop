@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Thomas Control
+GenericName=Centre de contrôle
+Comment=Tableau de bord et réglages de Thomas OS
+Exec=thomas-control
+Icon=thomas-os
+Categories=Settings;System;
+Keywords=réglages;paramètres;système;tableau de bord;cpu;ram;gpu;

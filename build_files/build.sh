@@ -167,7 +167,7 @@ grep -q '^X-KDE-Shortcuts=Alt+F2,Search$' /usr/share/applications/org.kde.krunne
     || echo "::warning::raccourci de KRunner non trouvé : Alt+Espace peut rester à la recherche"
 #     Fenêtres de choix (partie de base de Styles Thomas OS)
 rpm -q kdialog >/dev/null || dnf5 -y install kdialog
-chmod 0755 /usr/bin/thomas-style
+chmod 0755 /usr/bin/thomas-style /usr/libexec/thomas-core
 gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
 
 # 2. Nom de l'OS : "Thomas OS" partout où le système affiche son nom.
@@ -267,6 +267,11 @@ EOF
 /usr/bin/thomas-style verifier-systeme
 [[ "$(fc-list : family)" == *Manrope* ]] || { echo "ERREUR : police Manrope absente"; exit 1; }
 test -f /usr/share/plasma/plasmoids/org.thomasos.horloge/contents/ui/main.qml
+# Thomas Core (service D-Bus lancé à la demande) et Thomas Control (appli compilée)
+test -f /usr/share/dbus-1/services/org.thomasos.Core.service
+HOME="$(mktemp -d)" /usr/libexec/thomas-core --test
+command -v thomas-control >/dev/null || { echo "ERREUR : Thomas Control absent"; exit 1; }
+test -f /usr/share/applications/org.thomasos.control.desktop
 test -f /etc/xdg/autostart/thomas-style.desktop
 case "${GPU_VARIANT}" in
     amd-intel) ;;
