@@ -465,8 +465,18 @@ def lancer(cmd, important=False):
     return r.stdout.strip()
 
 
-def kw(fichier, groupe, cle, val):
-    lancer(["kwriteconfig6", "--file", fichier, "--group", groupe, "--key", cle, val])
+def kw(fichier, groupe, cle, val, prevenir=False):
+    """Écrit un réglage KDE. prevenir=True : les programmes ouverts le relisent tout de suite (--notify)
+    (sans ça, les notifications gardaient leur ancienne position jusqu'à la session suivante : vu en VM)."""
+    lancer(["kwriteconfig6", "--file", fichier, "--group", groupe, "--key", cle, val] + (["--notify"] if prevenir else []))
+
+
+def favoris_menu(ids):
+    """Favoris du menu : Fedora/Bazzite les lisent dans kicker-extra-favoritesrc quand un menu est créé
+    (la config du menu, elle, est ignorée : vu en VM). Version perso dans ~/.config, prioritaire sur le système."""
+    CFG.parent.mkdir(parents=True, exist_ok=True)
+    (CFG.parent / "kicker-extra-favoritesrc").write_text(
+        "[General]\nPrepend=" + "".join(f"{a}.desktop;" for a in ids) + "\nIgnoreDefaults=true\n", encoding="utf-8")
 
 
 def gdbus(dest, chemin, methode, *args):
@@ -551,8 +561,8 @@ def appliquer(sid, dispo=None, barre=True):
     kw("kwinrc", "org.kde.kdecoration2", "BorderSizeAuto", "false")
     # notifications : position et durée d'affichage (historique et clic → appli : natifs de Plasma)
     n = s["notifications"]
-    kw("plasmanotifyrc", "Notifications", "PopupPosition", POSITIONS[n["position"]])
-    kw("plasmanotifyrc", "Notifications", "PopupTimeout", str(int(n["duree"]) * 1000))
+    kw("plasmanotifyrc", "Notifications", "PopupPosition", POSITIONS[n["position"]], prevenir=True)
+    kw("plasmanotifyrc", "Notifications", "PopupTimeout", str(int(n["duree"]) * 1000), prevenir=True)
     kw("breezerc", "Common", "ShadowSize", OMBRES[f["ombre"]])
     kw("breezerc", "Common", "ShadowStrength", str(round(int(f["force_ombre"]) * 255 / 100)))
     transp = int(f["opacite_inactive"]) < 100 or int(f["opacite_deplacement"]) < 100
@@ -570,6 +580,8 @@ def appliquer(sid, dispo=None, barre=True):
     gdbus("org.kde.KWin", "/KWin", "org.kde.KWin.reconfigure")
     if s["bureau"]["icones"] == "oui":
         raccourcis_bureau(liste(s["bureau"]["icones_liste"]))
+    if barre:
+        favoris_menu(liste(s["menu"]["epingles"]))  # avant le script : le menu y est recréé et les relit
     if barre and attendre_plasma():
         gdbus("org.kde.plasmashell", "/PlasmaShell", "org.kde.PlasmaShell.evaluateScript", js)
     # mémoriser le style appliqué, en entier

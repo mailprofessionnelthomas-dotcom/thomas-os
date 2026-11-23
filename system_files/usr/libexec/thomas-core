@@ -7,6 +7,7 @@ org.thomasos.Diagnostic1 (rapport). Les applis Thomas OS passent par lui, jamais
 Transition : le moteur de styles reste /usr/bin/thomas-style, chargé ici comme bibliothèque.
 """
 import importlib.machinery
+import importlib.util
 import json
 import os
 import shutil
@@ -18,8 +19,17 @@ from gi.repository import Gio, GLib
 
 NOM, CHEMIN = "org.thomasos.Core", "/org/thomasos/Core"
 INACTIF_S = int(os.environ.get("THOMAS_CORE_INACTIF", "60"))
-STYLE = importlib.machinery.SourceFileLoader(
-    "thomas_style", os.environ.get("THOMAS_STYLE_BIN", "/usr/bin/thomas-style")).load_module()
+
+
+def charger_module(nom, chemin):
+    """Charge un script Python sans extension .py comme module (load_module n'existe plus en Python 3.14)."""
+    chargeur = importlib.machinery.SourceFileLoader(nom, chemin)
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader(nom, chargeur))
+    chargeur.exec_module(module)
+    return module
+
+
+STYLE = charger_module("thomas_style", os.environ.get("THOMAS_STYLE_BIN", "/usr/bin/thomas-style"))
 INFO_ENV = Path("/usr/share/thomas-os/info.env")
 FABRICANTS = {"0x10de": "nvidia", "0x1002": "amd", "0x8086": "intel"}
 

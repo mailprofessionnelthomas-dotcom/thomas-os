@@ -165,6 +165,17 @@ for f in /usr/share/applications/org.kde.krunner.desktop /usr/share/kglobalaccel
 done
 grep -q '^X-KDE-Shortcuts=Alt+F2,Search$' /usr/share/applications/org.kde.krunner.desktop \
     || echo "::warning::raccourci de KRunner non trouvé : Alt+Espace peut rester à la recherche"
+#     Favoris du menu (mécanisme Fedora/Bazzite) : ceux de Thomas OS, à la place de ceux de Bazzite
+KICKER_FAV=/usr/share/kde-settings/kde-profile/default/xdg/kicker-extra-favoritesrc
+install -d "$(dirname "${KICKER_FAV}")"
+python3 - "${KICKER_FAV}" <<'EOF'
+import importlib.machinery, importlib.util, sys
+chargeur = importlib.machinery.SourceFileLoader("ts", "/usr/bin/thomas-style")
+ts = importlib.util.module_from_spec(importlib.util.spec_from_loader("ts", chargeur))
+chargeur.exec_module(ts)
+open(sys.argv[1], "w", encoding="utf-8").write(
+    "[General]\nPrepend=" + "".join(f"{a}.desktop;" for a in ts.FAVORIS) + "\nIgnoreDefaults=true\n")
+EOF
 #     Fenêtres de choix (partie de base de Styles Thomas OS)
 rpm -q kdialog >/dev/null || dnf5 -y install kdialog
 chmod 0755 /usr/bin/thomas-style /usr/libexec/thomas-core
