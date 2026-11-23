@@ -21,6 +21,7 @@ qt_add_qml_module(thomas-control
         qml/PageSysteme.qml
         qml/Carte.qml
 )
+target_include_directories(thomas-control PRIVATE src)  # l'enregistrement QML généré inclut « controle.h »
 target_link_libraries(thomas-control PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::DBus)
 
 install(TARGETS thomas-control RUNTIME DESTINATION bin)
