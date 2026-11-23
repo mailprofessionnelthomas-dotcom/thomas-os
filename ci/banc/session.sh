@@ -80,19 +80,8 @@ for f in /usr/share/thomas-os/styles/*.conf; do
       | sed 's/\\n/\n/g' | sed 's/^/[banc] plasma: /'
     dire "réglages : notifications $(kreadconfig6 --file plasmanotifyrc --group Notifications --key PopupPosition) $(kreadconfig6 --file plasmanotifyrc --group Notifications --key PopupTimeout) ms ; bordures fenêtres $(kreadconfig6 --file kwinrc --group org.kde.kdecoration2 --key BorderSize)"
     grep -iE 'thomasos' /tmp/plasma.log | grep -iE 'error|warn|unavailable|not (a|de)|undefined' | sort -u | tail -10 | sed 's/^/[banc] qml : /'
-    # le style par défaut en situation : une fenêtre, une notification, puis le menu ouvert
-    dolphin --new-window "$HOME" >/dev/null 2>&1 &
-    sleep 8
-    placer 560 220 800 480
-    notify-send -a "Thomas OS" -i thomas-os "Notification de test" "En bas à droite, 5 secondes"
-    sleep 2
-    photo "style-thomas-fenetre"
-    gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell --method org.kde.PlasmaShell.activateLauncherMenu >/dev/null 2>&1
-    sleep 3
-    photo "style-thomas-menu"
-    gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell --method org.kde.PlasmaShell.activateLauncherMenu >/dev/null 2>&1
-    pkill -x dolphin
-    sleep 2
+    # Fenêtre, notification et menu ouvert : photographiés par le test VM (ici le rendu logiciel décroche
+    # dès qu'une fenêtre s'ouvre : « Rendering a layer failed », constaté le 23/11/2026)
   fi
 done
 

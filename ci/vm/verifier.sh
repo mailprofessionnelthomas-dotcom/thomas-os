@@ -49,12 +49,30 @@ session)
     if [[ -f "${actuel}" ]]; then ok "style posé au 1er login ($(grep -m1 '^id' "${actuel}"))"; else ko "style non posé au 1er login"; fi
     journalctl -b --no-pager _UID="$(id -u testeur)" 2>/dev/null | grep -iE 'thomas-style|⚠️|Erreur :' | tail -6 | sed 's/^/INFO    /'
     ;;
+situation)
+    # le bureau en usage : une fenêtre (Dolphin) et une notification, dans la session de « testeur »
+    u="$(id -u testeur)"
+    E=(XDG_RUNTIME_DIR="/run/user/${u}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" WAYLAND_DISPLAY=wayland-0 QT_QPA_PLATFORM=wayland)
+    applets="$(getent passwd testeur | cut -d: -f6)/.config/plasma-org.kde.plasma.desktop-appletsrc"
+    n="$(grep -c '^plugin=org.thomasos.barre$' "${applets}" 2>/dev/null)"
+    if [[ "${n:-0}" -ge 2 ]]; then ok "barre Thomas OS en place (${n} moitiés autour du logo)"; else ko "barre Thomas OS absente (${n:-0})"; fi
+    erreurs_qml="$(journalctl -b --no-pager _UID="${u}" 2>/dev/null | grep -i 'thomasos' | grep -iE 'error|is not a type|unavailable|undefined|cannot' | sort -u | tail -6)"
+    if [[ -z "${erreurs_qml}" ]]; then ok "aucune erreur QML des widgets Thomas OS"; else ko "erreurs QML :"; echo "${erreurs_qml}" | sed 's/^/INFO    /'; fi
+    runuser -u testeur -- env "${E[@]}" dolphin >/dev/null 2>&1 &
+    sleep 8
+    runuser -u testeur -- env "${E[@]}" notify-send -a "Thomas OS" -i thomas-os "Notification de test" "En bas à droite, 5 secondes"
+    ;;
+menu)
+    u="$(id -u testeur)"
+    runuser -u testeur -- env DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" gdbus call --session --dest org.kde.plasmashell \
+        --object-path /PlasmaShell --method org.kde.PlasmaShell.activateLauncherMenu >/dev/null && ok "menu ouvert"
+    ;;
 applis)
     for _ in $(seq 72); do [[ -n "$(systemctl show -p ExecMainExitTimestamp --value thomas-flatpak-preinstall.service)" ]] && break; sleep 10; done
     info "service des applis : $(systemctl show -p Result --value thomas-flatpak-preinstall.service)"
     info "applis Flatpak installées : $(flatpak list --app --columns=application | tr '\n' ' ')"
     ;;
 *)
-    echo "usage : verifier.sh demarrage|preparer|session|applis"; exit 2 ;;
+    echo "usage : verifier.sh demarrage|preparer|session|situation|menu|applis"; exit 2 ;;
 esac
 exit $((erreurs > 0))

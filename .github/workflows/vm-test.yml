@@ -103,6 +103,12 @@ jobs:
           bash ci/vm/dans-la-vm.sh session | tee -a resultats/rapport.txt
           sleep 15
           python3 ci/vm/photo.py /tmp/qemu-mon resultats/2-bureau.png
+          bash ci/vm/dans-la-vm.sh situation | tee -a resultats/rapport.txt
+          sleep 2
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/3-fenetre-notification.png
+          bash ci/vm/dans-la-vm.sh menu | tee -a resultats/rapport.txt
+          sleep 3
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/4-menu.png
 
       - name: Installation automatique des applis (information)
         continue-on-error: true
