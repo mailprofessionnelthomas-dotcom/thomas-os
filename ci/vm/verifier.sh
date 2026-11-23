@@ -1,5 +1,6 @@
 #!/bin/bash
-# Test de démarrage : exécuté DANS la machine virtuelle (utilisateur « testeur », mot de passe jetable dans $MDP).
+# Test de démarrage : exécuté DANS la machine virtuelle, en root (clé SSH jetable). $MDP = mot de passe jetable
+# du compte « testeur » créé pour ouvrir une vraie session.
 #   demarrage : le système a-t-il bien démarré, est-ce bien Thomas OS ?
 #   session   : la 1re ouverture de session pose-t-elle le style par défaut (comme sur un vrai PC) ?
 #   applis    : les applis Flatpak prévues s'installent-elles toutes seules ? (information seulement)
@@ -8,7 +9,7 @@ erreurs=0
 ok() { echo "OK      $*"; }
 ko() { echo "ECHEC   $*"; erreurs=$((erreurs + 1)); }
 info() { echo "INFO    $*"; }
-en_root() { echo "${MDP}" | sudo -S -p '' "$@"; }
+en_root() { "$@"; }
 
 case "${1:-}" in
 demarrage)
@@ -24,13 +25,17 @@ demarrage)
     if [[ "$(readlink -f /etc/systemd/system/rpm-ostree-countme.timer)" == /dev/null ]]; then ok "télémétrie Fedora coupée"; else ko "compteur Fedora actif"; fi
     ;;
 session)
-    en_root sh -c 'mkdir -p /etc/sddm.conf.d && printf "[Autologin]\nUser=testeur\nSession=plasma\n" >/etc/sddm.conf.d/zz-test-vm.conf && systemctl restart display-manager'
+    id testeur >/dev/null 2>&1 || useradd -m -G wheel testeur
+    echo "testeur:${MDP}" | chpasswd
+    mkdir -p /etc/sddm.conf.d
+    printf "[Autologin]\nUser=testeur\nSession=plasma\n" >/etc/sddm.conf.d/zz-test-vm.conf
+    systemctl restart display-manager
     for _ in $(seq 60); do pgrep -u testeur -x plasmashell >/dev/null && break; sleep 2; done
     if pgrep -u testeur -x plasmashell >/dev/null; then ok "session Plasma ouverte"; else ko "pas de session Plasma"; fi
-    for _ in $(seq 45); do [[ -f ~/.config/thomas-os/actuel.conf ]] && break; sleep 2; done
-    if [[ -f ~/.config/thomas-os/actuel.conf ]]; then ok "style posé au 1er login ($(grep -m1 '^id' ~/.config/thomas-os/actuel.conf))"
-    else ko "style non posé au 1er login"; fi
-    journalctl --user -b --no-pager 2>/dev/null | grep -iE 'thomas-style|⚠️|Erreur :' | tail -6 | sed 's/^/INFO    /'
+    actuel="$(getent passwd testeur | cut -d: -f6)/.config/thomas-os/actuel.conf"
+    for _ in $(seq 45); do [[ -f "${actuel}" ]] && break; sleep 2; done
+    if [[ -f "${actuel}" ]]; then ok "style posé au 1er login ($(grep -m1 '^id' "${actuel}"))"; else ko "style non posé au 1er login"; fi
+    journalctl -b --no-pager _UID="$(id -u testeur)" 2>/dev/null | grep -iE 'thomas-style|⚠️|Erreur :' | tail -6 | sed 's/^/INFO    /'
     ;;
 applis)
     for _ in $(seq 72); do [[ -n "$(systemctl show -p ExecMainExitTimestamp --value thomas-flatpak-preinstall.service)" ]] && break; sleep 10; done

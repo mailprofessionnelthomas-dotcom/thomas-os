@@ -28,7 +28,7 @@ jobs:
         shell: bash  # = bash -eo pipefail : une vérification ratée fait échouer l'étape, même derrière « tee »
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/thomas-os:${{ inputs.image_tag }}
-      SSH: ssh -i vm_key -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR testeur@127.0.0.1
+      SSH: ssh -i vm_key -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR root@127.0.0.1
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -47,49 +47,36 @@ jobs:
           sudo udevadm trigger --name-match=kvm
           ls -l /dev/kvm /usr/share/OVMF/
 
-      - name: Compte de test jetable
+      - name: Clé et mot de passe jetables
         run: |
           ssh-keygen -q -t ed25519 -N '' -f vm_key
           MDP="$(openssl rand -hex 12)"
           echo "::add-mask::${MDP}"
           echo "MDP=${MDP}" >> "${GITHUB_ENV}"
-          cat > vm.toml <<EOF
-          [[customizations.user]]
-          name = "testeur"
-          password = "${MDP}"
-          key = "$(cat vm_key.pub)"
-          groups = ["wheel"]
 
-          [customizations.kernel]
-          append = "systemd.wants=sshd.service"
-          EOF
-
-      # Lancé à la main (pas l'action toute faite) : sur Ubuntu, AppArmor bloque les montages de l'outil
-      # → apparmor=unconfined pour ce conteneur de construction uniquement.
-      - name: Disque de la VM (bootc-image-builder)
+      # Installation par bootc lui-même (comme un vrai PC), sur un disque virtuel de 40 Go.
+      # (bootc-image-builder/osbuild est bloqué par AppArmor sur les runners Ubuntu : essayé, abandonné)
+      - name: Installer Thomas OS sur le disque de la VM
         run: |
-          # Ubuntu interdit les « espaces de noms » utilisateur dont osbuild a besoin : levé sur ce runner jetable
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           sudo podman pull -q "${IMAGE}"
-          mkdir -p sortie
-          sudo podman run --rm --privileged --pull=newer \
+          truncate -s 40G disque.raw
+          sudo podman run --rm --privileged --pid=host \
             --security-opt label=type:unconfined_t --security-opt apparmor=unconfined \
-            -v "$PWD/vm.toml:/config.toml:ro" -v "$PWD/sortie:/output" \
-            -v /var/lib/containers/storage:/var/lib/containers/storage \
-            quay.io/centos-bootc/bootc-image-builder:latest \
-            --type qcow2 --rootfs btrfs --use-librepo=True "${IMAGE}"
+            -v /dev:/dev -v /var/lib/containers:/var/lib/containers -v "$PWD:/sortie" \
+            "${IMAGE}" bootc install to-disk --via-loopback --generic-image --filesystem btrfs \
+              --root-ssh-authorized-keys /sortie/vm_key.pub --karg systemd.wants=sshd.service \
+              /sortie/disque.raw || { sudo dmesg | grep -iE 'apparmor|denied' | tail -15; exit 1; }
+          sudo chown "$(id -u):$(id -g)" disque.raw
 
       - name: Démarrer la VM
         run: |
-          DISQUE="$(sudo find sortie -name '*.qcow2' | head -1)"
-          sudo chown "$(id -u):$(id -g)" "${DISQUE}"
-          echo "Disque : ${DISQUE} ($(du -h "${DISQUE}" | cut -f1))"
+          DISQUE=disque.raw
           cp /usr/share/OVMF/OVMF_VARS_4M.fd vars.fd
           mkdir -p resultats
           qemu-system-x86_64 -enable-kvm -cpu host -smp 4 -m 6144 -machine q35 \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive if=pflash,format=raw,file=vars.fd \
-            -drive file="${DISQUE}",if=virtio,format=qcow2 \
+            -drive file="${DISQUE}",if=virtio,format=raw \
             -device virtio-vga -display none \
             -netdev user,id=n0,hostfwd=tcp:127.0.0.1:2222-:22 -device virtio-net-pci,netdev=n0 \
             -monitor unix:/tmp/qemu-mon,server,nowait -serial file:resultats/console.log -daemonize
