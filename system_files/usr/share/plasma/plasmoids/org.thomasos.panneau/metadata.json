@@ -1,0 +1,15 @@
+{
+    "KPlugin": {
+        "Authors": [{ "Name": "Thomas OS" }],
+        "Category": "System Information",
+        "Description": "Réglages rapides : Wi-Fi, Bluetooth, volume, luminosité",
+        "Icon": "configure",
+        "Id": "org.thomasos.panneau",
+        "License": "GPL-3.0",
+        "Name": "Panneau rapide Thomas OS",
+        "Version": "1.0",
+        "FormFactors": ["horizontal", "vertical"]
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

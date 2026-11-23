@@ -115,7 +115,7 @@ function nouveau(sid){const p=STYLES[sid]||STYLES.thomas||Object.values(STYLES)[
   couleurs:{mode:sombre?'sombre':'clair',principale:p.principale,barre:p.barre,fenetres:p.fenetres,texte:p.texte,bordure:p.bordure||p.principale},
   fond:{type:'degrade',haut:p.fond_haut,bas:p.fond_bas,fichier:''},
   effets:{opacite:+p.opacite,opacite_menus:+p.opacite_menus,flou:+p.flou,coins:+p.coins,coins_menus:+(p.coins_menus||p.coins),epaisseur_bordure:+(p.epaisseur_bordure||0),animations:p.animations},
-  barre:{bord:dis==='vertical'?'gauche':'bas',flottante:['float','macos','capsule'].includes(dis),longueur:['float','macos','capsule'].includes(dis)?'ajustee':'pleine',logo_centre:dis==='capsule',
+  barre:{bord:dis==='vertical'?'gauche':'bas',flottante:['float','macos','capsule'].includes(dis),longueur:['float','macos','capsule'].includes(dis)?'ajustee':'pleine',logo_centre:dis==='capsule',panneau:dis==='capsule',
    alignement:dis==='vertical'?'gauche':'centre',epaisseur:Math.min(44,+p.epaisseur+(dis==='macos'?12:dis==='vertical'?6:0)),masquage:'non',
    epingles:[...EPINGLES],bureaux:false,afficher_bureau:false,date:true,barre_haut:dis==='macos'},
   menu:{type:'kickoff',largeur:640,hauteur:560,favoris:'grille',cote:'gauche',epingles:[...FAVORIS]},
@@ -144,7 +144,7 @@ function largHorloge(d,T){const c=cx;if(!d.barre.date){c.font=FT(d,clockPx(T));r
  c.font=FT(d,clockPx2(T));return Math.round(Math.max(c.measureText('00:00').width,c.measureText('22/11/2026').width)+16)}
 function geo(d){const b=d.barre,T=b.epaisseur,v=b.bord==='gauche'||b.bord==='droite',g=b.flottante?8:0,haut=b.barre_haut&&b.bord!=='haut',lw=Math.round(T*1.25),gs=Math.round(T*.78);
  const lan=b.epingles.map((id,i)=>({k:'lanceur',i,id,l:lw})),mi=Math.ceil(lan.length/2),ga=b.logo_centre?[...lan.slice(0,mi),{k:'kickoff',l:lw},...lan.slice(mi)]:[{k:'kickoff',l:lw},...lan];if(b.bureaux)ga.push({k:'pager',l:Math.round(T*(v?1.6:2.6))});
- const dr=[];if(!haut){dr.push({k:'tray',l:gs*4+8});dr.push({k:'horloge',l:v?Math.round(T*1.3):largHorloge(d,T)})}if(b.afficher_bureau)dr.push({k:'montrer',l:Math.round(T*.45)});
+ const dr=[];if(!haut){if(b.panneau)dr.push({k:'panneau',l:Math.round(T*.9)});dr.push({k:'tray',l:gs*4+8});dr.push({k:'horloge',l:v?Math.round(T*1.3):largHorloge(d,T)})}if(b.afficher_bureau)dr.push({k:'montrer',l:Math.round(T*.45)});
  const deb=haut&&v?24:0,dispo=(v?H-deb:W)-2*g,pad=4,sg=ga.reduce((s,i)=>s+i.l,0),sd=dr.reduce((s,i)=>s+i.l,0);
  const L=b.longueur==='ajustee'?Math.min(dispo,sg+sd+2*pad+(dr.length?10:0)):dispo,a0=deb+g+(dispo-L)/2,P={v,T,g,flot:b.flottante,items:[]};
  if(v)Object.assign(P,{w:T,h:L,y:a0,x:b.bord==='gauche'?g:W-T-g});else Object.assign(P,{w:L,h:T,x:a0,y:b.bord==='bas'?H-T-g:g});
@@ -186,6 +186,7 @@ function glyphe(c,k,x,y,s,col){c.save();c.strokeStyle=col;c.fillStyle=col;c.line
  else if(k==='S'){c.arc(x,y,u*.3,0,7);c.fill()}
  else if(k==='F'){c.moveTo(x-u*.45,y-u*.45);c.lineTo(x+u*.45,y-u*.45);c.moveTo(x-u*.4,y+u*.35);c.lineTo(x,y-u*.1);c.lineTo(x+u*.4,y+u*.35);c.stroke()}
  else if(k==='H'){texte(c,'?',x,y,`600 ${Math.round(s*.8)}px Manrope`,col,'center')}
+ else if(k==='reglages'){for(const[dy,kx]of[[-.45,.3],[0,-.3],[.45,.1]]){c.beginPath();c.moveTo(x-u*.7,y+u*dy);c.lineTo(x+u*.7,y+u*dy);c.stroke();c.beginPath();c.arc(x+u*kx,y+u*dy,u*.2,0,7);c.fill()}}
  else if(k==='loupe'){c.arc(x-u*.15,y-u*.15,u*.45,0,7);c.moveTo(x+u*.2,y+u*.2);c.lineTo(x+u*.6,y+u*.6);c.stroke()}
  c.restore()}
 function couleurHorloge(d){if(d.fond.type==='image')return'#ffffff';const m=mixh(d.fond.haut,d.fond.type==='uni'?d.fond.haut:d.fond.bas,.3);return lum(m)>.55?d.couleurs.texte:'#ffffff'}
@@ -251,6 +252,7 @@ function item(c,d,it,P){const co=d.couleurs,T=P.T,ic=Math.round(T*.68),mx=it.x+i
  case'kickoff':logo(c,mx-ic/2,my-ic/2,ic);break;
  case'lanceur':icone(c,it.id,mx-ic/2,my-ic/2,ic);if(it.id==='org.kde.dolphin'){const L=Math.round(ic*.45),b=d.barre.bord;c.fillStyle=co.principale;if(P.v)c.fillRect(b==='gauche'?it.x+1:it.x+it.w-3,my-L/2,2,L);else c.fillRect(mx-L/2,b==='haut'?it.y+1:it.y+it.h-3,L,2)}break;
  case'pager':for(let i=0;i<2;i++){const r=P.v?[it.x+4,it.y+3+i*(it.h-3)/2,it.w-8,(it.h-9)/2]:[it.x+3+i*(it.w-3)/2,it.y+4,(it.w-9)/2,it.h-8];rr(c,...r,2);if(!i){c.fillStyle=rgba(co.principale,.45);c.fill()}c.strokeStyle=rgba(fg,.5);c.lineWidth=1;c.stroke()}break;
+ case'panneau':glyphe(c,'reglages',mx,my,Math.round(Math.min(T*.55,22)),fg);break;
  case'tray':{const gs=Math.round(T*.78),s=Math.round(Math.min(T*.55,22));['chevron','reseau','son','cloche'].forEach((k,i)=>P.v?glyphe(c,k,mx,it.y+4+gs*i+gs/2,s,fg):glyphe(c,k,it.x+4+gs*i+gs/2,my,s,fg));break}
  case'horloge':{const dt=new Date().toLocaleDateString('fr-FR');if(!d.barre.date){texte(c,heure(),mx,my,FT(d,P.v?Math.round(T*.3):clockPx(T)),fg,'center');break}
   const p=P.v?Math.round(T*.28):clockPx2(T);texte(c,heure(),mx,my-p*.55,FT(d,p),fg,'center');texte(c,P.v?dt.slice(0,5):dt,mx,my+p*.6,FT(d,p),fg,'center');break}
@@ -360,7 +362,7 @@ function inspecteur(){ong.innerHTML='';for(const[k,t]of Object.entries(TABS)){co
   choix('Longueur','barre.longueur',[['pleine','Tout l’écran'],['ajustee','Ajustée']]),choix('Icônes','barre.alignement',[['centre','Centrées'],['gauche','Au début']]),
   choix('Se cache','barre.masquage',[['non','Jamais'],['auto','Toujours'],['fenetres','Sous une fenêtre']]),
   h3('Apparence'),curseur('Épaisseur','barre.epaisseur',22,44,1,' px'),curseur('Opacité','effets.opacite',10,100,1,' %'),curseur('Flou','effets.flou',0,40),curseur('Coins','effets.coins',0,24,1,' px'),curseur('Bordure','effets.epaisseur_bordure',0,3,1,' px'),
-  h3('Éléments'),oui('Logo T au centre','barre.logo_centre'),oui('Bureaux virtuels','barre.bureaux'),oui('Bouton « bureau »','barre.afficher_bureau'),oui('Date sous l’heure','barre.date'),oui('Barre du haut + menu global','barre.barre_haut'),
+  h3('Éléments'),oui('Logo T au centre','barre.logo_centre'),oui('Panneau rapide','barre.panneau'),oui('Bureaux virtuels','barre.bureaux'),oui('Bouton « bureau »','barre.afficher_bureau'),oui('Date sous l’heure','barre.date'),oui('Barre du haut + menu global','barre.barre_haut'),
   h3('Applis épinglées'),puces(d.barre.epingles,APPS),note('Glisse les icônes dans la barre pour changer l’ordre. Tire le bord de la barre pour l’épaisseur, glisse la barre vers un bord pour la déplacer. Clic droit : plus d’options.'));
  else if(ui.tab==='menu'){A(h3('Menu démarrer'),choix('Type','menu.type',[['kickoff','Lanceur'],['kicker','Classique'],['dash','Plein écran']]));
   if(d.menu.type==='kickoff')A(curseur('Largeur','menu.largeur',480,1200,10,' px'),curseur('Hauteur','menu.hauteur',400,1000,10,' px'),choix('Favoris','menu.favoris',[['grille','Grille'],['liste','Liste']]),choix('Catégories','menu.cote',[['gauche','À gauche'],['droite','À droite']]),note('Tu peux aussi tirer le coin du menu.'));

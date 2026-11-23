@@ -56,7 +56,12 @@ situation)
     applets="$(getent passwd testeur | cut -d: -f6)/.config/plasma-org.kde.plasma.desktop-appletsrc"
     n="$(grep -c '^plugin=org.thomasos.barre$' "${applets}" 2>/dev/null)"
     if [[ "${n:-0}" -ge 2 ]]; then ok "barre Thomas OS en place (${n} moitiés autour du logo)"; else ko "barre Thomas OS absente (${n:-0})"; fi
-    erreurs_qml="$(journalctl -b --no-pager _UID="${u}" 2>/dev/null | grep -i 'thomasos' | grep -iE 'error|is not a type|unavailable|undefined|cannot' | sort -u | tail -6)"
+    if grep -q '^plugin=org.thomasos.panneau$' "${applets}" 2>/dev/null; then ok "panneau rapide en place"; else ko "panneau rapide absent"; fi
+    # Les réglages optionnels du panneau (Wi-Fi, Bluetooth, volume, luminosité) peuvent manquer sur un PC : information
+    journal_qml="$(journalctl -b --no-pager _UID="${u}" 2>/dev/null | grep -i 'thomasos\|Panneau rapide' | grep -iE 'error|is not a type|unavailable|undefined|cannot|indisponible' | sort -u)"
+    optionnels="$(grep -E '(Wifi|Bluetooth|Volume|Luminosite)\.qml|réglage indisponible' <<<"${journal_qml}" | tail -6)"
+    erreurs_qml="$(grep -vE '(Wifi|Bluetooth|Volume|Luminosite)\.qml|réglage indisponible' <<<"${journal_qml}" | grep . | tail -6)"
+    [[ -n "${optionnels}" ]] && echo "${optionnels}" | sed 's/^/INFO    réglage optionnel : /'
     if [[ -z "${erreurs_qml}" ]]; then ok "aucune erreur QML des widgets Thomas OS"; else ko "erreurs QML :"; echo "${erreurs_qml}" | sed 's/^/INFO    /'; fi
     runuser -u testeur -- env "${E[@]}" dolphin >/dev/null 2>&1 &
     sleep 8
