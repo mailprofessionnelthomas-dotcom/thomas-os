@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+  <group name="General">
+    <!-- Applis épinglées (même format que la barre de KDE : applications:xxx.desktop) -->
+    <entry name="launchers" type="StringList"/>
+    <!-- tout, gauche (1re moitié des applis) ou droite (2e moitié) : deux barres entourent le logo T -->
+    <entry name="moitie" type="String">
+      <default>tout</default>
+    </entry>
+  </group>
+</kcfg>

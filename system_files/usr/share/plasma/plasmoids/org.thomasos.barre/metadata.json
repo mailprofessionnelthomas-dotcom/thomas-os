@@ -1,0 +1,15 @@
+{
+    "KPlugin": {
+        "Authors": [{ "Name": "Thomas OS" }],
+        "Category": "Windows and Tasks",
+        "Description": "Applis épinglées et ouvertes, réparties autour du logo T, avec zoom et halo au survol",
+        "Icon": "thomas-os",
+        "Id": "org.thomasos.barre",
+        "License": "GPL-3.0",
+        "Name": "Barre Thomas OS",
+        "Version": "1.0",
+        "FormFactors": ["horizontal", "vertical"]
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

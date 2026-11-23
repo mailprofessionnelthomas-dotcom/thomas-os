@@ -54,13 +54,17 @@ jobs:
           code=0
           SF="$PWD/system_files"
           python3 identite/fond.py "$PWD/fond-tmp"   # fond d'écran et logo du repo, comme dans l'image
+          WIDGETS=()   # tous les widgets Thomas OS du repo (horloge, barre, panneau…)
+          for p in "$SF"/usr/share/plasma/plasmoids/org.thomasos.*; do
+            WIDGETS+=(-v "$p:/usr/share/plasma/plasmoids/$(basename "$p"):ro")
+          done
           # SYS_NICE : kwin_wayland porte cette capacité, sans elle le conteneur refuse de le lancer
           sudo podman run --rm --network none --cap-add SYS_NICE --device /dev/dri \
             -v "$PWD/ci/banc:/banc:ro" -v "$PWD/sortie:/sortie" -v "$PWD/studio/designs:/designs:ro" \
             -v "$SF/usr/bin/thomas-style:/usr/bin/thomas-style:ro" \
             -v "$SF/usr/share/thomas-os/styles:/usr/share/thomas-os/styles:ro" \
             -v "$SF/usr/share/thomas-os/fonds:/usr/share/thomas-os/fonds:ro" \
-            -v "$SF/usr/share/plasma/plasmoids/org.thomasos.horloge:/usr/share/plasma/plasmoids/org.thomasos.horloge:ro" \
+            "${WIDGETS[@]}" \
             -v "$PWD/fond-tmp:/usr/share/wallpapers/ThomasOS:ro" \
             -v "$PWD/identite/logo/thomas-os.svg:/usr/share/icons/hicolor/scalable/apps/thomas-os.svg:ro" \
             "${IMAGE,,}" bash /banc/lancer.sh > sortie/journal.txt 2>&1 || code=$?

@@ -40,8 +40,9 @@ USER_DIR = CFG / "styles"
 ACTUEL = CFG / "actuel.conf"
 DEFAUT = "thomas"
 ECRAN = (1920, 1080)
-DISPOS = {"windows": "Windows 11 (en bas, centrée)", "macos": "macOS (barre en haut + dock)",
-          "float": "Flottante", "vertical": "Verticale", "studio": "Celle du Studio (perso)"}
+DISPOS = {"capsule": "Capsule Thomas OS (logo T au centre)", "windows": "Windows 11 (en bas, centrée)",
+          "macos": "macOS (barre en haut + dock)", "float": "Flottante", "vertical": "Verticale",
+          "studio": "Celle du Studio (perso)"}
 POLICES = {"manrope": "Manrope", "open": "Open Sans", "outfit": "Outfit", "nunito": "Nunito",
            "plex": "IBM Plex Sans", "rajdhani": "Rajdhani", "mono": "JetBrains Mono"}
 ANIMS = {"rapides": "0.5", "normales": "1", "aucune": "0"}
@@ -69,7 +70,7 @@ WIDGETS = {"horloge-thomas": ("org.thomasos.horloge", 620, 170, 300, 110),
            "musique": ("org.kde.plasma.mediacontroller", 360, 150, 240, 100),
            "notes": ("org.kde.plasma.notes", 260, 260, 160, 160)}
 MENUS = {"kickoff": "org.kde.plasma.kickoff", "kicker": "org.kde.plasma.kicker", "dash": "org.kde.plasma.kickerdash"}
-PLUGINS_BARRE = ["org.kde.plasma.icontasks", "org.kde.plasma.systemtray", "org.kde.plasma.digitalclock",
+PLUGINS_BARRE = ["org.thomasos.barre", "org.kde.plasma.icontasks", "org.kde.plasma.systemtray", "org.kde.plasma.digitalclock",
                  "org.kde.plasma.panelspacer", "org.kde.plasma.pager", "org.kde.plasma.showdesktop",
                  "org.kde.plasma.appmenu", "org.kde.plasma.folder"]
 ICONES = {"auto": "", "breeze-dark": "Breeze sombre", "breeze": "Breeze clair", "Papirus-Dark": "Papirus sombre",
@@ -90,7 +91,7 @@ BASE = {
                "epaisseur_bordure": "0", "animations": "rapides"},
     "barre": {"epaisseur": "28", "disposition": "windows", "bord": "bas", "flottante": "non", "longueur": "pleine",
               "alignement": "centre", "masquage": "non", "epingles": ",".join(EPINGLES), "bureaux": "non",
-              "afficher_bureau": "non", "date": "oui", "barre_haut": "non"},
+              "afficher_bureau": "non", "date": "oui", "barre_haut": "non", "logo_centre": "non"},
     "menu": {"type": "kickoff", "largeur": "640", "hauteur": "560", "favoris": "grille", "cote": "gauche",
              "epingles": ",".join(FAVORIS), "raccourci": "Alt+F1"},
     "notifications": {"position": "bas-droite", "duree": "5"},
@@ -113,7 +114,7 @@ CHOIX = [("barre", "disposition", DISPOS), ("texte", "police", POLICES), ("burea
          ("barre", "flottante", OUINON), ("barre", "longueur", ("pleine", "ajustee")),
          ("barre", "alignement", ("centre", "gauche")), ("barre", "masquage", ("non", "auto", "fenetres")),
          ("barre", "bureaux", OUINON), ("barre", "afficher_bureau", OUINON), ("barre", "date", OUINON),
-         ("barre", "barre_haut", OUINON), ("menu", "type", MENUS), ("menu", "favoris", ("grille", "liste")),
+         ("barre", "barre_haut", OUINON), ("barre", "logo_centre", OUINON), ("menu", "type", MENUS), ("menu", "favoris", ("grille", "liste")),
          ("menu", "cote", ("gauche", "droite")), ("bureau", "fond", ("degrade", "uni", "image")),
          ("bureau", "icones", OUINON), ("fenetres", "ombre", OMBRES), ("systeme", "icones", ICONES),
          ("systeme", "curseur", CURSEURS), ("notifications", "position", POSITIONS),
@@ -364,8 +365,18 @@ function menu(p) {
   }
 }
 function taches(p) { cfg(w(p, "org.kde.plasma.icontasks"), "launchers", C.LANCEURS); }
+// Barre Thomas OS : une moitié des applis de chaque côté du logo T (repli : barre de KDE si le widget manque)
+function moitie(p, cote) {
+  var b = null;
+  try { b = w(p, "org.thomasos.barre"); } catch (e) {}
+  if (!b) { if (cote === "gauche") taches(p); return; }
+  cfg(b, "moitie", cote); cfg(b, "launchers", C.LANCEURS);
+}
+function autourDuLogo(p) { moitie(p, "gauche"); menu(p); moitie(p, "droite"); }
 function droite(p) { w(p, "org.kde.plasma.systemtray"); cfg(w(p, "org.kde.plasma.digitalclock"), "showDate", B.date); }
-if (D === "windows") { var p = panneau("bottom", H, false);
+if (D === "capsule") { var p = panneau("bottom", H, true); p.lengthMode = "fit"; p.alignment = "center";
+  autourDuLogo(p); droite(p); }
+else if (D === "windows") { var p = panneau("bottom", H, false);
   w(p, "org.kde.plasma.panelspacer"); menu(p); taches(p); w(p, "org.kde.plasma.panelspacer"); droite(p); }
 else if (D === "float") { var p = panneau("bottom", H, true); p.lengthMode = "fit"; p.alignment = "center";
   menu(p); taches(p); droite(p); }
@@ -381,7 +392,8 @@ else {
   if (fit) { p.lengthMode = "fit"; p.alignment = "center"; }
   p.hiding = {non: "none", auto: "autohide", fenetres: "dodgewindows"}[B.masquage];
   if (!fit && B.alignement === "centre") w(p, "org.kde.plasma.panelspacer");
-  menu(p); taches(p); if (B.bureaux) w(p, "org.kde.plasma.pager");
+  if (B.logo) autourDuLogo(p); else { menu(p); taches(p); }
+  if (B.bureaux) w(p, "org.kde.plasma.pager");
   if (!fit) w(p, "org.kde.plasma.panelspacer");
   if (!haut) droite(p);
   if (B.montrer) w(p, "org.kde.plasma.showdesktop");
@@ -419,7 +431,8 @@ def script_barre(s, fond):
         "D": b["disposition"], "H": int(b["epaisseur"]),
         "B": {"bord": b["bord"], "flottante": b["flottante"] == "oui", "longueur": b["longueur"],
               "alignement": b["alignement"], "masquage": b["masquage"], "bureaux": b["bureaux"] == "oui",
-              "montrer": b["afficher_bureau"] == "oui", "date": b["date"] == "oui", "haut": b["barre_haut"] == "oui"},
+              "montrer": b["afficher_bureau"] == "oui", "date": b["date"] == "oui", "haut": b["barre_haut"] == "oui",
+              "logo": b["logo_centre"] == "oui"},
         # une vraie liste (pas un texte « a,b,c » : KDE n'y verrait qu'une seule appli inconnue, vu sur le banc)
         "LANCEURS": [f"applications:{a}.desktop" for a in liste(b["epingles"])],
         "MENU": {"plugin": MENUS[m["type"]], "largeur": int(m["largeur"]), "hauteur": int(m["hauteur"]),
@@ -723,7 +736,8 @@ def importer(chemin, repo=None):
                   "epingles": ",".join(applis("barre", "barre")),
                   "bureaux": un("barre", "bureaux", "bureaux virtuels", OUINON, "non"),
                   "afficher_bureau": un("barre", "afficher_bureau", "bouton bureau", OUINON, "non"),
-                  "date": un("barre", "date", "date", OUINON, "oui"), "barre_haut": haut}
+                  "date": un("barre", "date", "date", OUINON, "oui"), "barre_haut": haut,
+                  "logo_centre": un("barre", "logo_centre", "logo au centre", OUINON, "non")}
     s["menu"] = {"type": un("menu", "type", "type de menu", MENUS, "kickoff"),
                  "largeur": num("menu", "largeur", "largeur du menu", 640, 480, 1200),
                  "hauteur": num("menu", "hauteur", "hauteur du menu", 560, 400, 1000),

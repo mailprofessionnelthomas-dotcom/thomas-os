@@ -79,6 +79,7 @@ for f in /usr/share/thomas-os/styles/*.conf; do
                + (w.type.indexOf("kickoff") >= 0 ? " raccourci=" + w.globalShortcut : "")); }); });' \
       | sed 's/\\n/\n/g' | sed 's/^/[banc] plasma: /'
     dire "réglages : notifications $(kreadconfig6 --file plasmanotifyrc --group Notifications --key PopupPosition) $(kreadconfig6 --file plasmanotifyrc --group Notifications --key PopupTimeout) ms ; bordures fenêtres $(kreadconfig6 --file kwinrc --group org.kde.kdecoration2 --key BorderSize)"
+    grep -iE 'thomasos' /tmp/plasma.log | grep -iE 'error|warn|unavailable|not (a|de)|undefined' | sort -u | tail -10 | sed 's/^/[banc] qml : /'
     # le style par défaut en situation : une fenêtre, une notification, puis le menu ouvert
     dolphin --new-window "$HOME" >/dev/null 2>&1 &
     sleep 8
