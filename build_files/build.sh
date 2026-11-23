@@ -159,6 +159,12 @@ install -D -m 0644 /ctx/identite/tokens.json /usr/share/thomas-os/identite/token
 install -D -m 0644 /ctx/identite/logo/thomas-os.svg /usr/share/icons/hicolor/scalable/apps/thomas-os.svg
 install -D -m 0644 /ctx/identite/logo/thomas-os.svg /usr/share/thomas-os/identite/logo/thomas-os.svg
 python3 /ctx/identite/fond.py /usr/share/wallpapers/ThomasOS
+#     Alt+Espace ouvre le menu Thomas OS : la recherche KRunner garde Alt+F2 et la touche Recherche
+for f in /usr/share/applications/org.kde.krunner.desktop /usr/share/kglobalaccel/org.kde.krunner.desktop; do
+    [[ -e "${f}" ]] && sed -i --follow-symlinks 's/^X-KDE-Shortcuts=.*/X-KDE-Shortcuts=Alt+F2,Search/' "${f}"
+done
+grep -q '^X-KDE-Shortcuts=Alt+F2,Search$' /usr/share/applications/org.kde.krunner.desktop \
+    || echo "::warning::raccourci de KRunner non trouvé : Alt+Espace peut rester à la recherche"
 #     Fenêtres de choix (partie de base de Styles Thomas OS)
 rpm -q kdialog >/dev/null || dnf5 -y install kdialog
 chmod 0755 /usr/bin/thomas-style

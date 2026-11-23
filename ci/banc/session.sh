@@ -75,8 +75,23 @@ for f in /usr/share/thomas-os/styles/*.conf; do
       'desktops().forEach(function (d) { print("ecran " + JSON.stringify(screenGeometry(d.screen)));
          d.widgets().forEach(function (w) { print("widget " + w.type + " " + JSON.stringify(w.geometry)); }); });
        panels().forEach(function (p) { p.widgets().forEach(function (w) { w.currentConfigGroup = ["General"];
-         print("barre " + w.type + " " + (w.type.indexOf("tasks") >= 0 ? w.readConfig("launchers", "?") : "")); }); });' \
+         print("barre " + w.type + " " + (w.type.indexOf("tasks") >= 0 ? w.readConfig("launchers", "?") : "")
+               + (w.type.indexOf("kickoff") >= 0 ? " raccourci=" + w.globalShortcut : "")); }); });' \
       | sed 's/\\n/\n/g' | sed 's/^/[banc] plasma: /'
+    dire "réglages : notifications $(kreadconfig6 --file plasmanotifyrc --group Notifications --key PopupPosition) $(kreadconfig6 --file plasmanotifyrc --group Notifications --key PopupTimeout) ms ; bordures fenêtres $(kreadconfig6 --file kwinrc --group org.kde.kdecoration2 --key BorderSize)"
+    # le style par défaut en situation : une fenêtre, une notification, puis le menu ouvert
+    dolphin --new-window "$HOME" >/dev/null 2>&1 &
+    sleep 8
+    placer 560 220 800 480
+    notify-send -a "Thomas OS" -i thomas-os "Notification de test" "En bas à droite, 5 secondes"
+    sleep 2
+    photo "style-thomas-fenetre"
+    gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell --method org.kde.PlasmaShell.activateLauncherMenu >/dev/null 2>&1
+    sleep 3
+    photo "style-thomas-menu"
+    gdbus call --session --dest org.kde.plasmashell --object-path /PlasmaShell --method org.kde.PlasmaShell.activateLauncherMenu >/dev/null 2>&1
+    pkill -x dolphin
+    sleep 2
   fi
 done
 

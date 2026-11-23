@@ -78,6 +78,9 @@ CURSEURS = {"breeze_cursors": "Breeze", "Breeze_Light": "Breeze clair", "Adwaita
 OMBRES = {"aucune": "ShadowNone", "petite": "ShadowSmall", "moyenne": "ShadowMedium", "grande": "ShadowLarge",
           "enorme": "ShadowVeryLarge"}
 BOUTONS = "MSFHIAX"
+POSITIONS = {"bas-droite": "BottomRight", "bas-gauche": "BottomLeft", "haut-droite": "TopRight",
+             "haut-gauche": "TopLeft", "pres-horloge": "CloseToWidget"}
+BORDURES_FEN = {"aucune": "None", "fine": "Tiny", "normale": "Normal"}
 TAILLES_ICONES = [16, 22, 32, 48, 64, 128]
 BASE = {
     "style": {"nom": "", "description": ""},
@@ -89,11 +92,13 @@ BASE = {
               "alignement": "centre", "masquage": "non", "epingles": ",".join(EPINGLES), "bureaux": "non",
               "afficher_bureau": "non", "date": "oui", "barre_haut": "non"},
     "menu": {"type": "kickoff", "largeur": "640", "hauteur": "560", "favoris": "grille", "cote": "gauche",
-             "epingles": ",".join(FAVORIS)},
+             "epingles": ",".join(FAVORIS), "raccourci": "Alt+F1"},
+    "notifications": {"position": "bas-droite", "duree": "5"},
     "texte": {"police": "manrope", "taille": "12", "epaisseur_texte": "400"},
     "bureau": {"horloge": "oui", "fond": "degrade", "fond_image": "", "icones": "oui", "taille_icones": "3",
                "icones_liste": "", "widgets": ""},
-    "fenetres": {"boutons_gauche": "M", "boutons_droite": "IAX", "coins": "", "opacite_inactive": "100",
+    "fenetres": {"boutons_gauche": "M", "boutons_droite": "IAX", "coins": "", "bordures": "normale",
+                 "opacite_inactive": "100",
                  "opacite_deplacement": "100", "ombre": "moyenne", "force_ombre": "50"},
     "systeme": {"icones": "auto", "curseur": "breeze_cursors", "taille_curseur": "24"},
 }
@@ -101,7 +106,7 @@ LIMITES = {"opacite": (10, 100), "opacite_menus": (10, 100), "flou": (0, 40), "c
            "coins_menus": (0, 24), "epaisseur_bordure": (0, 3),
            "epaisseur": (22, 44), "taille": (10, 14), "epaisseur_texte": (300, 500), "largeur": (480, 1200),
            "hauteur": (400, 1000), "taille_icones": (0, 5), "opacite_inactive": (30, 100),
-           "opacite_deplacement": (30, 100), "force_ombre": (0, 100), "taille_curseur": (16, 64)}
+           "opacite_deplacement": (30, 100), "force_ombre": (0, 100), "taille_curseur": (16, 64), "duree": (2, 30)}
 OUINON = ("oui", "non")
 CHOIX = [("barre", "disposition", DISPOS), ("texte", "police", POLICES), ("bureau", "horloge", OUINON),
          ("effets", "animations", ANIMS), ("barre", "bord", ("bas", "haut", "gauche", "droite")),
@@ -111,7 +116,8 @@ CHOIX = [("barre", "disposition", DISPOS), ("texte", "police", POLICES), ("burea
          ("barre", "barre_haut", OUINON), ("menu", "type", MENUS), ("menu", "favoris", ("grille", "liste")),
          ("menu", "cote", ("gauche", "droite")), ("bureau", "fond", ("degrade", "uni", "image")),
          ("bureau", "icones", OUINON), ("fenetres", "ombre", OMBRES), ("systeme", "icones", ICONES),
-         ("systeme", "curseur", CURSEURS)]
+         ("systeme", "curseur", CURSEURS), ("notifications", "position", POSITIONS),
+         ("fenetres", "bordures", BORDURES_FEN)]
 EFFET_COINS = "kwin4_effect_shapecorners"
 
 
@@ -183,6 +189,8 @@ def verifier(s, sid):
     for k in ("boutons_gauche", "boutons_droite"):
         if not re.fullmatch(f"[{BOUTONS}]*", s["fenetres"][k]):
             raise Erreur(f"{sid} : « {k} » = lettres parmi {BOUTONS}")
+    if not re.fullmatch(r"([A-Za-z]+\+)*[A-Za-z0-9]+", s["menu"]["raccourci"]):
+        raise Erreur(f"{sid} : raccourci du menu « {s['menu']['raccourci']} » (exemple : Alt+Space)")
     widgets(s)
 
 
@@ -348,6 +356,7 @@ function cfg(x, k, v) { x.currentConfigGroup = ["General"]; x.writeConfig(k, v);
 function panneau(lieu, h, flottant) { var p = new Panel; p.location = lieu; p.height = h; p.floating = flottant; return p; }
 function menu(p) {
   var m = w(p, M.plugin); cfg(m, "icon", "thomas-os");
+  try { m.globalShortcut = M.raccourci; } catch (e) {}
   cfg(m, "favoritesPortedToKAstats", false); cfg(m, "favorites", M.favoris); cfg(m, "favoriteApps", M.favoris);
   if (M.plugin === "org.kde.plasma.kickoff") {
     cfg(m, "popupWidth", M.largeur); cfg(m, "popupHeight", M.hauteur);
@@ -414,7 +423,7 @@ def script_barre(s, fond):
         # une vraie liste (pas un texte « a,b,c » : KDE n'y verrait qu'une seule appli inconnue, vu sur le banc)
         "LANCEURS": [f"applications:{a}.desktop" for a in liste(b["epingles"])],
         "MENU": {"plugin": MENUS[m["type"]], "largeur": int(m["largeur"]), "hauteur": int(m["hauteur"]),
-                 "liste": m["favoris"] == "liste", "droite": m["cote"] == "droite",
+                 "liste": m["favoris"] == "liste", "droite": m["cote"] == "droite", "raccourci": m["raccourci"],
                  "favoris": [f"applications:{a}.desktop" for a in liste(m["epingles"])]},
         "WIDGETS": [[WIDGETS[t][0], x, y, l, h, {"couleur": coul} if t == "horloge-thomas" else {}]
                     for t, x, y, l, h in widgets(s)],
@@ -521,6 +530,12 @@ def appliquer(sid, dispo=None, barre=True):
     f = s["fenetres"]
     kw("kwinrc", "org.kde.kdecoration2", "ButtonsOnLeft", f["boutons_gauche"])
     kw("kwinrc", "org.kde.kdecoration2", "ButtonsOnRight", f["boutons_droite"])
+    kw("kwinrc", "org.kde.kdecoration2", "BorderSize", BORDURES_FEN[f["bordures"]])
+    kw("kwinrc", "org.kde.kdecoration2", "BorderSizeAuto", "false")
+    # notifications : position et durée d'affichage (historique et clic → appli : natifs de Plasma)
+    n = s["notifications"]
+    kw("plasmanotifyrc", "Notifications", "PopupPosition", POSITIONS[n["position"]])
+    kw("plasmanotifyrc", "Notifications", "PopupTimeout", str(int(n["duree"]) * 1000))
     kw("breezerc", "Common", "ShadowSize", OMBRES[f["ombre"]])
     kw("breezerc", "Common", "ShadowStrength", str(round(int(f["force_ombre"]) * 255 / 100)))
     transp = int(f["opacite_inactive"]) < 100 or int(f["opacite_deplacement"]) < 100
