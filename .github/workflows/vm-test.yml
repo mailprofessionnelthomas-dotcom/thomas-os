@@ -97,6 +97,9 @@ jobs:
 
       - name: 1re ouverture de session
         run: |
+          bash ci/vm/dans-la-vm.sh preparer | tee -a resultats/rapport.txt
+          sleep 30
+          for i in $(seq 60); do ${SSH} true 2>/dev/null && break; sleep 5; done
           bash ci/vm/dans-la-vm.sh session | tee -a resultats/rapport.txt
           sleep 15
           python3 ci/vm/photo.py /tmp/qemu-mon resultats/2-bureau.png

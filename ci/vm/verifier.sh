@@ -24,14 +24,21 @@ demarrage)
     if systemctl is-enabled --quiet thomas-flatpak-preinstall.timer; then ok "installation des applis programmée"; else ko "timer des applis"; fi
     if [[ "$(readlink -f /etc/systemd/system/rpm-ostree-countme.timer)" == /dev/null ]]; then ok "télémétrie Fedora coupée"; else ko "compteur Fedora actif"; fi
     ;;
-session)
+preparer)
+    # compte de test + ouverture de session automatique, puis redémarrage (SDDM ne la fait qu'au démarrage)
     id testeur >/dev/null 2>&1 || useradd -m -G wheel testeur
     echo "testeur:${MDP}" | chpasswd
     mkdir -p /etc/sddm.conf.d
     printf "[Autologin]\nUser=testeur\nSession=plasma\n" >/etc/sddm.conf.d/zz-test-vm.conf
-    systemctl restart display-manager
-    for _ in $(seq 60); do pgrep -u testeur -x plasmashell >/dev/null && break; sleep 2; done
-    if pgrep -u testeur -x plasmashell >/dev/null; then ok "session Plasma ouverte"; else ko "pas de session Plasma"; fi
+    systemd-run --on-active=3 systemctl reboot >/dev/null && ok "redémarrage demandé"
+    ;;
+session)
+    for _ in $(seq 90); do pgrep -u testeur -x plasmashell >/dev/null && break; sleep 2; done
+    if pgrep -u testeur -x plasmashell >/dev/null; then ok "session Plasma ouverte"; else
+        ko "pas de session Plasma"
+        loginctl list-sessions --no-legend | sed 's/^/INFO    session : /'
+        journalctl -b -u display-manager --no-pager | tail -12 | sed 's/^/INFO    /'
+    fi
     actuel="$(getent passwd testeur | cut -d: -f6)/.config/thomas-os/actuel.conf"
     for _ in $(seq 45); do [[ -f "${actuel}" ]] && break; sleep 2; done
     if [[ -f "${actuel}" ]]; then ok "style posé au 1er login ($(grep -m1 '^id' "${actuel}"))"; else ko "style non posé au 1er login"; fi
@@ -43,6 +50,6 @@ applis)
     info "applis Flatpak installées : $(flatpak list --app --columns=application | tr '\n' ' ')"
     ;;
 *)
-    echo "usage : verifier.sh demarrage|session|applis"; exit 2 ;;
+    echo "usage : verifier.sh demarrage|preparer|session|applis"; exit 2 ;;
 esac
 exit $((erreurs > 0))
