@@ -1,0 +1,135 @@
+---
+# Test de démarrage : installe Thomas OS sur le disque d'une machine virtuelle (sur GitHub, jamais sur un PC),
+# la démarre (UEFI), vérifie le système, ouvre une 1re session comme sur un vrai PC, et prend des photos.
+# Compte de test, clé SSH et mot de passe sont jetables : ils n'existent que dans ce disque de test.
+name: Test de démarrage (VM)
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Version à tester (testing, ou un numéro AAAAMMJJ.N)"
+        default: testing
+
+permissions:
+  contents: read
+
+jobs:
+  vm:
+    name: Démarrage dans une machine virtuelle
+    runs-on: ubuntu-26.04
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: bash  # = bash -eo pipefail : une vérification ratée fait échouer l'étape, même derrière « tee »
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/thomas-os:${{ inputs.image_tag }}
+      SSH: ssh -i vm_key -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR testeur@127.0.0.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Maximize build space
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
+        with:
+          remove-codeql: true
+
+      - name: Outils (QEMU, UEFI, KVM)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf python3-pil >/dev/null
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm /usr/share/OVMF/
+
+      - name: Compte de test jetable
+        run: |
+          ssh-keygen -q -t ed25519 -N '' -f vm_key
+          MDP="$(openssl rand -hex 12)"
+          echo "::add-mask::${MDP}"
+          echo "MDP=${MDP}" >> "${GITHUB_ENV}"
+          cat > vm.toml <<EOF
+          [[customizations.user]]
+          name = "testeur"
+          password = "${MDP}"
+          key = "$(cat vm_key.pub)"
+          groups = ["wheel"]
+
+          [customizations.kernel]
+          append = "systemd.wants=sshd.service"
+
+          [[customizations.filesystem]]
+          mountpoint = "/"
+          minsize = "40 GiB"
+          EOF
+
+      - name: Disque de la VM (bootc-image-builder)
+        id: disque
+        uses: osbuild/bootc-image-builder-action@8661cd3832544ad68c12dcde8681b13ab0f56a8d # main
+        with:
+          builder-image: quay.io/centos-bootc/bootc-image-builder:latest
+          config-file: ./vm.toml
+          image: ${{ env.IMAGE }}
+          types: qcow2
+          additional-args: --use-librepo=True --rootfs btrfs
+
+      - name: Démarrer la VM
+        run: |
+          D="${{ steps.disque.outputs.output-directory }}"
+          DISQUE="$(sudo find "${D}" -name '*.qcow2' | head -1)"
+          sudo chown "$(id -u):$(id -g)" "${DISQUE}"
+          echo "Disque : ${DISQUE} ($(du -h "${DISQUE}" | cut -f1))"
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd vars.fd
+          mkdir -p resultats
+          qemu-system-x86_64 -enable-kvm -cpu host -smp 4 -m 6144 -machine q35 \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -drive if=pflash,format=raw,file=vars.fd \
+            -drive file="${DISQUE}",if=virtio,format=qcow2 \
+            -device virtio-vga -display none \
+            -netdev user,id=n0,hostfwd=tcp:127.0.0.1:2222-:22 -device virtio-net-pci,netdev=n0 \
+            -monitor unix:/tmp/qemu-mon,server,nowait -serial file:resultats/console.log -daemonize
+          for i in $(seq 120); do
+            ${SSH} true 2>/dev/null && { echo "VM joignable après $((i * 5)) s"; exit 0; }
+            sleep 5
+          done
+          echo "::error::La VM ne répond pas après 10 min"
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/0-bloque.png || true
+          tail -40 resultats/console.log
+          exit 1
+
+      - name: Vérifier le système démarré
+        run: |
+          ${SSH} "MDP='${MDP}' bash -s demarrage" < ci/vm/verifier.sh | tee resultats/rapport.txt
+          sleep 10
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/1-connexion.png
+
+      - name: 1re ouverture de session
+        run: |
+          ${SSH} "MDP='${MDP}' bash -s session" < ci/vm/verifier.sh | tee -a resultats/rapport.txt
+          sleep 15
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/2-bureau.png
+
+      - name: Installation automatique des applis (information)
+        continue-on-error: true
+        timeout-minutes: 15
+        run: ${SSH} "MDP='${MDP}' bash -s applis" < ci/vm/verifier.sh | tee -a resultats/rapport.txt
+
+      - name: Résumé
+        if: always()
+        run: |
+          { echo "## Test de démarrage (${{ inputs.image_tag }})"; echo '```'; cat resultats/rapport.txt 2>/dev/null; echo '```'; } >> "${GITHUB_STEP_SUMMARY}"
+          tail -c 200000 resultats/console.log > resultats/console-fin.log 2>/dev/null || true
+          rm -f resultats/console.log
+
+      - name: Envoyer les résultats
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-vm
+          path: resultats
+          retention-days: 14

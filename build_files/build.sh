@@ -79,6 +79,9 @@ dnf5 install -y \
     python3-pip \
     git \
     papirus-icon-theme
+# Outils système KDE retenus par Thomas (23/11/2026) : en paquets système (Spectacle a besoin d'être natif
+# pour capturer l'écran sous Wayland). Déjà présents dans Bazzite ? dnf ne fait alors rien.
+dnf5 install -y konsole spectacle ark
 # Papirus sombre : paquet à part dans Fedora (nom vérifié par « thomas-style verifier-systeme » plus bas)
 dnf5 install -y papirus-icon-theme-dark || echo "ATTENTION : paquet papirus-icon-theme-dark introuvable"
 
@@ -95,11 +98,18 @@ fi
 FLATPAK_LIST=/usr/share/thomas-os/flatpaks.list
 PREINSTALL=/usr/share/flatpak/preinstall.d/thomas-os.preinstall
 install -d "$(dirname "${PREINSTALL}")"
+DEJA_RPM=/tmp/flatpak-deja-rpm.txt
+: >"${DEJA_RPM}"
 {
     echo "# Généré depuis ${FLATPAK_LIST} au build de Thomas OS : ne pas modifier ici"
     grep -Ev '^[[:space:]]*(#|$)' "${FLATPAK_LIST}" | while IFS=/ read -r kind app_id arch branch; do
         [[ "${kind}" == "app" || "${kind}" == "runtime" ]] || { echo "ERREUR ligne invalide : ${kind}/${app_id}" >&2; exit 1; }
         [[ -n "${app_id}" && "${arch}" == "x86_64" && -n "${branch}" ]] || { echo "ERREUR ligne invalide : ${kind}/${app_id}/${arch}/${branch}" >&2; exit 1; }
+        # Pas de doublon : si l'appli est déjà là en paquet système, on n'installe pas aussi le Flatpak
+        if [[ "${kind}" == "app" && -f "/usr/share/applications/${app_id}.desktop" ]]; then
+            echo "${app_id}" >>"${DEJA_RPM}"
+            continue
+        fi
         echo ""
         echo "[Flatpak Preinstall ${app_id}]"
         echo "Branch=${branch}"
@@ -107,6 +117,10 @@ install -d "$(dirname "${PREINSTALL}")"
     done
 } >"${PREINSTALL}"
 chmod 0644 "${PREINSTALL}"
+echo "Flatpaks non installés car déjà en paquet système : $(tr '\n' ' ' <"${DEJA_RPM}")"
+for f in /usr/share/flatpak/preinstall.d/*.preinstall; do
+    [[ "${f}" == "${PREINSTALL}" ]] || echo "Flatpaks prévus par Bazzite ($(basename "${f}")) : $(grep -o '^\[Flatpak Preinstall [^]]*' "${f}" | cut -d' ' -f3 | tr '\n' ' ')"
+done
 systemctl enable thomas-flatpak-preinstall.timer
 
 # 1d. Zéro télémétrie : on coupe le compteur anonyme de Fedora (rpm-ostree countme).
@@ -207,7 +221,10 @@ done
 for cmd in claude code node npm python3 pip3 git; do
     command -v "${cmd}" >/dev/null || { echo "ERREUR : commande ${cmd} introuvable"; exit 1; }
 done
-test "$(grep -c '^\[Flatpak Preinstall ' "${PREINSTALL}")" -eq "$(grep -Evc '^[[:space:]]*(#|$)' "${FLATPAK_LIST}")"
+test "$(grep -c '^\[Flatpak Preinstall ' "${PREINSTALL}")" -eq "$(( $(grep -Evc '^[[:space:]]*(#|$)' "${FLATPAK_LIST}") - $(wc -l <"${DEJA_RPM}") ))"
+for pkg in konsole spectacle ark; do
+    rpm -q "${pkg}" >/dev/null || { echo "ERREUR : paquet ${pkg} absent"; exit 1; }
+done
 flatpak preinstall --help >/dev/null
 test -L /etc/systemd/system/timers.target.wants/thomas-flatpak-preinstall.timer
 test "$(readlink /etc/systemd/system/rpm-ostree-countme.timer)" = "/dev/null"

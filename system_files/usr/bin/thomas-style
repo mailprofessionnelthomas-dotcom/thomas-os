@@ -46,7 +46,8 @@ POLICES = {"manrope": "Manrope", "open": "Open Sans", "outfit": "Outfit", "nunit
            "plex": "IBM Plex Sans", "rajdhani": "Rajdhani", "mono": "JetBrains Mono"}
 ANIMS = {"rapides": "0.5", "normales": "1", "aucune": "0"}
 # Applis présentes dans Thomas OS (même liste que le Studio). RPM = installées dans l'image.
-APPS_RPM = ["org.kde.dolphin", "com.microsoft.VSCode", "org.kde.konsole", "systemsettings", "io.github.kolunmi.Bazaar"]
+APPS_RPM = ["org.kde.dolphin", "com.microsoft.VSCode", "org.kde.konsole", "systemsettings", "io.github.kolunmi.Bazaar",
+            "org.kde.spectacle", "org.kde.ark"]
 APPS_FLATPAK = ["com.opera.opera-gx", "org.mozilla.firefox", "com.spotify.Client", "org.libreoffice.LibreOffice",
                 "org.videolan.VLC", "org.kde.gwenview", "org.kde.okular", "org.kde.kcalc", "com.github.tchx84.Flatseal",
                 "io.github.flattool.Warehouse", "io.github.DenysMb.Kontainer"]

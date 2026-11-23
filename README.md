@@ -34,7 +34,10 @@ Thomas OS installe le strict utile : chacun ajoute ses jeux et ses applis depuis
 | Musique | Spotify |
 | Coder | VS Code, Git, Python + pip, Node.js + npm, Claude Code |
 | Bureau | LibreOffice, VLC, Gwenview (images), Okular (PDF), KCalc |
+| Outils système | Konsole (terminal), Spectacle (captures d'écran), Ark (archives) |
 | Gérer ses applis | Flatseal, Warehouse, Kontainer |
+
+Pas de doublon : une appli déjà fournie en paquet système n'est pas installée une 2e fois en Flatpak.
 
 - Les applis viennent de **Flathub** (Flatpak) : la liste est dans [`system_files/usr/share/thomas-os/flatpaks.list`](system_files/usr/share/thomas-os/flatpaks.list). Une appli ajoutée à la liste s'installe aussi sur les PC déjà installés ; une appli désinstallée volontairement n'est jamais réinstallée.
 - En paquets système (car elles marchent mal en Flatpak) : VS Code, Claude Code (dépôt officiel, canal stable), Node.js, Python, Git. Elles se mettent à jour avec Thomas OS.
