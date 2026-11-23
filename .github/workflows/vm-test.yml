@@ -91,20 +91,20 @@ jobs:
 
       - name: Vérifier le système démarré
         run: |
-          ${SSH} "MDP='${MDP}' bash -s demarrage" < ci/vm/verifier.sh | tee resultats/rapport.txt
+          bash ci/vm/dans-la-vm.sh demarrage | tee resultats/rapport.txt
           sleep 10
           python3 ci/vm/photo.py /tmp/qemu-mon resultats/1-connexion.png
 
       - name: 1re ouverture de session
         run: |
-          ${SSH} "MDP='${MDP}' bash -s session" < ci/vm/verifier.sh | tee -a resultats/rapport.txt
+          bash ci/vm/dans-la-vm.sh session | tee -a resultats/rapport.txt
           sleep 15
           python3 ci/vm/photo.py /tmp/qemu-mon resultats/2-bureau.png
 
       - name: Installation automatique des applis (information)
         continue-on-error: true
         timeout-minutes: 15
-        run: ${SSH} "MDP='${MDP}' bash -s applis" < ci/vm/verifier.sh | tee -a resultats/rapport.txt
+        run: bash ci/vm/dans-la-vm.sh applis | tee -a resultats/rapport.txt
 
       - name: Résumé
         if: always()
