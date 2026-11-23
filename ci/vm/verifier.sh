@@ -90,10 +90,14 @@ core)
 control)
     # Thomas Control : s'ouvre, reste ouvert, sans erreur QML
     u="$(id -u testeur)"
-    E=(XDG_RUNTIME_DIR="/run/user/${u}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" WAYLAND_DISPLAY=wayland-0 QT_QPA_PLATFORM=wayland)
+    E=(XDG_RUNTIME_DIR="/run/user/${u}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" WAYLAND_DISPLAY=wayland-0
+       QT_QPA_PLATFORM=wayland QT_FORCE_STDERR_LOGGING=1)
     runuser -u testeur -- env "${E[@]}" thomas-control >/tmp/control.log 2>&1 &
     sleep 6
-    if pgrep -u testeur -x thomas-control >/dev/null; then ok "Thomas Control ouvert"; else ko "Thomas Control s'est fermé :"; tail -8 /tmp/control.log | sed 's/^/INFO    /'; fi
+    if pgrep -u testeur -x thomas-control >/dev/null; then ok "Thomas Control ouvert"; else
+        ko "Thomas Control s'est fermé :"
+        { cat /tmp/control.log; journalctl -b --no-pager -o cat _COMM=thomas-control 2>/dev/null; } | grep . | tail -12 | sed 's/^/INFO    /'
+    fi
     e="$(grep -iE 'qml|error|warning' /tmp/control.log | grep -v 'Qt Quick Layouts' | sort -u | tail -6)"
     if [[ -z "${e}" ]]; then ok "aucune erreur QML dans Thomas Control"; else ko "messages de Thomas Control :"; echo "${e}" | sed 's/^/INFO    /'; fi
     ;;
