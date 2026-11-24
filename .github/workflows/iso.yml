@@ -1,0 +1,245 @@
+---
+# Clé USB de Thomas OS : fabrique l'ISO (session live + installateur), la teste dans une machine virtuelle AVEC
+# Secure Boot activé, puis la publie dans une Release, découpée en morceaux de moins de 2 Go (limite de GitHub)
+# avec « Assembler-ISO.cmd » pour la recoller sous Windows. Tout se passe sur GitHub, jamais sur un PC.
+# Méthode de Bazzite : image « installateur » (iso/) + ublue-os/titanoboa.
+name: Clé USB (ISO)
+on:
+  workflow_dispatch:
+    inputs:
+      canal:
+        description: "Canal suivi par le PC installé (testing ou stable)"
+        default: testing
+      variante:
+        description: "thomas-os (AMD/Intel), thomas-os-nvidia ou thomas-os-nvidia-legacy"
+        default: thomas-os
+      publier:
+        description: "Publier dans une Release si le test Secure Boot passe"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iso-${{ inputs.variante }}-${{ inputs.canal }}
+  cancel-in-progress: true
+
+jobs:
+  construire:
+    name: Fabriquer l'ISO
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      nom: ${{ steps.refs.outputs.nom }}
+      version: ${{ steps.refs.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Faire de la place
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
+        with:
+          tool-cache: true
+
+      # comme Bazzite : stockage des conteneurs sur un disque btrfs compressé (l'image + l'image à installer)
+      - name: Stockage des conteneurs
+        run: |
+          sudo truncate -s 110G /mnt/podman-storage.img
+          sudo mkfs.btrfs -f -m single -d single /mnt/podman-storage.img
+          sudo podman system reset --force
+          sudo systemctl stop podman.service || true
+          LOOP=$(sudo losetup --find --show --direct-io=on /mnt/podman-storage.img)
+          sudo mkdir -p /mnt/podman-storage
+          sudo mount -o compress-force=zstd:2,discard=async,noatime "$LOOP" /mnt/podman-storage
+          sudo mkdir -p /mnt/podman-storage/storage /mnt/podman-storage/tmp
+          sudo mount --bind /mnt/podman-storage/storage /var/lib/containers/storage
+          sudo systemctl start podman.service || true
+
+      - name: Image et version
+        id: refs
+        env:
+          CANAL: ${{ inputs.canal }}
+          VARIANTE: ${{ inputs.variante }}
+        run: |
+          [[ "${CANAL}" =~ ^(testing|stable)$ ]] || { echo "::error::canal inconnu : ${CANAL}"; exit 1; }
+          [[ "${VARIANTE}" =~ ^thomas-os(-nvidia|-nvidia-legacy)?$ ]] || { echo "::error::variante inconnue : ${VARIANTE}"; exit 1; }
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${VARIANTE}:${CANAL}"
+          sudo podman pull -q "${image}"
+          version="$(sudo podman run --rm --entrypoint cat "${image}" /usr/share/thomas-os/info.env | sed -n 's/^THOMAS_OS_VERSION=//p')"
+          [[ -n "${version}" ]] || { echo "::error::version introuvable dans ${image}"; exit 1; }
+          echo "image=${image}" >>"${GITHUB_OUTPUT}"
+          echo "version=${version}" >>"${GITHUB_OUTPUT}"
+          echo "nom=${VARIANTE}-${CANAL}-${version}.iso" >>"${GITHUB_OUTPUT}"
+          echo "Image ${image}, version ${version}"
+
+      - name: Image installateur (session live + Anaconda)
+        env:
+          IMAGE: ${{ steps.refs.outputs.image }}
+        run: |
+          sudo env TMPDIR=/mnt/podman-storage/tmp podman build \
+            --cap-add sys_admin --security-opt label=disable \
+            --build-arg BASE_IMAGE="${IMAGE}" --build-arg INSTALL_IMAGE_PAYLOAD="${IMAGE}" \
+            -t localhost/thomas-os-installateur:latest iso/
+
+      - name: Fabriquer l'ISO (titanoboa)
+        id: iso
+        uses: ublue-os/titanoboa@5c457c3d0518bd17e754be0fd98a60d29d26abb4
+        with:
+          image-ref: localhost/thomas-os-installateur:latest
+          iso-dest: ${{ github.workspace }}/sortie/${{ steps.refs.outputs.nom }}
+
+      - name: Taille et empreinte
+        run: |
+          ls -lh sortie/
+          (cd sortie && sha256sum ./*.iso | tee SHA256SUMS)
+          df -h / /mnt
+
+      - name: Garder l'ISO pour le test
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: iso
+          path: sortie
+          retention-days: 3
+          compression-level: 0
+
+  tester:
+    name: Démarrer la clé avec Secure Boot (VM)
+    needs: construire
+    runs-on: ubuntu-26.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Récupérer l'ISO
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: iso
+          path: sortie
+
+      - name: Outils (QEMU, UEFI avec Secure Boot, KVM)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf python3-pil >/dev/null
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /usr/share/OVMF/
+
+      # UEFI avec les clés de Microsoft et Secure Boot activé, comme un PC du commerce
+      - name: Démarrer la clé
+        env:
+          NOM: ${{ needs.construire.outputs.nom }}
+        run: |
+          mkdir -p resultats
+          cp /usr/share/OVMF/OVMF_VARS_4M.ms.fd vars.fd
+          qemu-img create -q -f qcow2 disque.qcow2 64G
+          qemu-system-x86_64 -enable-kvm -cpu host -smp 4 -m 8192 \
+            -machine q35,smm=on -global driver=cfi.pflash01,property=secure,value=on \
+            -drive if=pflash,format=raw,unit=0,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.secboot.fd \
+            -drive if=pflash,format=raw,unit=1,file=vars.fd \
+            -drive file="sortie/${NOM}",media=cdrom,readonly=on,if=none,id=cle -device ide-cd,drive=cle,bootindex=0 \
+            -drive file=disque.qcow2,if=virtio,format=qcow2 \
+            -device virtio-vga -display none -serial file:resultats/serie.log \
+            -monitor unix:/tmp/qemu-mon,server,nowait -daemonize
+          sleep 12
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/1-menu-de-demarrage.png
+
+      - name: Attendre la session live
+        run: |
+          for i in $(seq 48); do
+            grep -q 'THOMAS-LIVE:' resultats/serie.log && break
+            sleep 15
+            (( i % 8 == 0 )) && python3 ci/vm/photo.py /tmp/qemu-mon "resultats/2-attente-$((i / 4)).png"
+          done
+          sleep 5
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/3-session-live.png
+          ligne="$(grep -a 'THOMAS-LIVE:' resultats/serie.log | tail -1)"
+          { echo "## Clé USB ${{ needs.construire.outputs.nom }}"; echo '```'; echo "${ligne:-pas de session live au bout de 12 min}"; echo '```'; } >>"${GITHUB_STEP_SUMMARY}"
+          echo "${ligne}"
+          [[ "${ligne}" == *"secureboot=SecureBoot enabled"* ]] || { echo "::error::Secure Boot pas actif (ou session live pas prête)"; exit 1; }
+          [[ "${ligne}" =~ plasma=[1-9] ]] || { echo "::error::bureau live absent"; exit 1; }
+          [[ "${ligne}" =~ installateur=[1-9] ]] || { echo "::error::installateur pas ouvert"; exit 1; }
+          echo "OK : la clé démarre avec Secure Boot activé, bureau live et installateur ouverts"
+
+      - name: Envoyer les photos
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-cle-usb
+          path: resultats
+          retention-days: 14
+
+  publier:
+    name: Publier (Release en morceaux)
+    needs: [construire, tester]
+    if: inputs.publier
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Récupérer l'ISO
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: iso
+          path: sortie
+
+      - name: Découper + Assembler-ISO.cmd
+        env:
+          NOM: ${{ needs.construire.outputs.nom }}
+        run: |
+          mkdir -p cle
+          (cd sortie && sha256sum -c SHA256SUMS)
+          somme="$(cut -d' ' -f1 sortie/SHA256SUMS)"
+          split -b 1900M -d -a 2 "sortie/${NOM}" "cle/${NOM}.part"
+          parts=(); for p in cle/*.part*; do parts+=("\"$(basename "${p}")\""); done
+          liste="$(IFS=+; echo "${parts[*]}")"
+          {
+            echo '@echo off'
+            echo 'chcp 65001 >nul'
+            echo 'cd /d "%~dp0"'
+            echo 'echo Thomas OS : assemblage de la clé USB (quelques minutes)...'
+            echo "copy /b ${liste} \"${NOM}\" >nul"
+            echo 'if errorlevel 1 (echo ERREUR : un morceau manque, retélécharge-les tous dans le même dossier. & pause & exit /b 1)'
+            echo 'echo Vérification du fichier...'
+            echo "certutil -hashfile \"${NOM}\" SHA256 | findstr /i \"${somme}\" >nul"
+            echo "if errorlevel 1 (echo ERREUR : le fichier est abîmé, retélécharge les morceaux. & pause & exit /b 1)"
+            echo "echo OK : ${NOM} est complet et intact. Tu peux supprimer les fichiers .part."
+            echo 'pause'
+          } | sed 's/$/\r/' >cle/Assembler-ISO.cmd
+          cp sortie/SHA256SUMS cle/
+          ls -lh cle/
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOM: ${{ needs.construire.outputs.nom }}
+          VERSION: ${{ needs.construire.outputs.version }}
+          CANAL: ${{ inputs.canal }}
+        run: |
+          tag="cle-usb-${{ inputs.variante }}-${CANAL}-${VERSION}"
+          {
+            echo "Clé USB de Thomas OS **${VERSION}** (${{ inputs.variante }}, canal ${CANAL}). Testée dans une machine virtuelle avec Secure Boot activé."
+            echo
+            echo "1. Télécharge **tous** les fichiers \`.part\` et \`Assembler-ISO.cmd\` dans un même dossier."
+            echo "2. Double-clique sur \`Assembler-ISO.cmd\` : il recolle \`${NOM}\` et vérifie qu'il est intact."
+            echo "3. Écris l'ISO sur une clé USB avec un outil graphique, puis installe : guide pas à pas dans [docs/INSTALLATION.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/INSTALLATION.md)."
+            echo
+            echo "Empreinte SHA-256 de l'ISO : \`$(cut -d' ' -f1 cle/SHA256SUMS)\`"
+          } >notes.md
+          gh release create "${tag}" cle/* --title "Clé USB Thomas OS ${VERSION} (${CANAL})" --notes-file notes.md --target "${GITHUB_SHA}"
+          echo "Release : https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}" | tee -a "${GITHUB_STEP_SUMMARY}"

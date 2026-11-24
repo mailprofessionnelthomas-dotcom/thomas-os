@@ -1,0 +1,10 @@
+label: "ThomasOS-Live"
+grub2:
+  timeout: 5
+  entries:
+    - name: "Thomas OS : essayer et installer"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb root=live:CDLABEL=ThomasOS-Live enforcing=0 rd.live.image"
+      initrd: "/images/pxeboot/initrd.img"
+    - name: "Thomas OS : essayer et installer (affichage de secours)"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb root=live:CDLABEL=ThomasOS-Live enforcing=0 rd.live.image nomodeset"
+      initrd: "/images/pxeboot/initrd.img"

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Installer Thomas OS
+Comment=Clé USB : l'installateur s'ouvre tout seul. Ferme-le pour essayer Thomas OS, puis rouvre-le depuis le menu.
+Exec=liveinst
+Icon=thomas-os
+OnlyShowIn=KDE;
+X-KDE-autostart-phase=2

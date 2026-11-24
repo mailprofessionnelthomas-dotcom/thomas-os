@@ -1,0 +1,10 @@
+[Unit]
+Description=Thomas OS (clé USB) : signale sur le port série que la session live est prête (test VM sur GitHub)
+After=graphical.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/thomas-live-pret
+
+[Install]
+WantedBy=graphical.target

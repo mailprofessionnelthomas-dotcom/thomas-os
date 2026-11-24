@@ -1,0 +1,8 @@
+#!/bin/bash
+# Clé USB : une fois le bureau live ouvert, écrit une ligne sur le port série (lue par le test VM sur GitHub).
+# Sur un vrai PC sans port série, la ligne ne va nulle part.
+for _ in $(seq 120); do pgrep -x plasmashell >/dev/null && break; sleep 2; done
+sleep 20  # le temps que l'installateur s'ouvre
+ligne="THOMAS-LIVE: plasma=$(pgrep -c -x plasmashell) installateur=$(pgrep -c -f 'anaconda|liveinst') secureboot=$(mokutil --sb-state 2>&1 | head -1)"
+echo "${ligne}"
+echo "${ligne}" >/dev/ttyS0 2>/dev/null || :

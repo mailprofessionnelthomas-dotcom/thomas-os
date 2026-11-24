@@ -26,6 +26,8 @@ on:
       - 'ci/vm/**'
       - '.github/workflows/captures.yml'
       - '.github/workflows/vm-test.yml'
+      - 'iso/**'
+      - '.github/workflows/iso.yml'
   workflow_dispatch:
 
 env:
