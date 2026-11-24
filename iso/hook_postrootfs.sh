@@ -69,6 +69,10 @@ ostreecontainer --url=${image}:${canal} --transport=containers-storage --no-sign
 # pyanaconda/modules/services/installation.py) et il choisit le mode texte s'il ne trouve pas le paquet.
 xconfig --startxonboot
 
+# Logo de démarrage (Plymouth) au lieu du texte qui défile : « rhgb quiet », imposé pour la même raison
+# (lu dans pyanaconda/modules/storage/bootloader/base.py : ajouté seulement s'il trouve le paquet plymouth).
+bootloader --append="rhgb quiet"
+
 %post --erroronfail --log=/tmp/thomas-os-journaux/canal.log
 bootc switch --mutate-in-place --transport registry ${image}:${canal}
 %end

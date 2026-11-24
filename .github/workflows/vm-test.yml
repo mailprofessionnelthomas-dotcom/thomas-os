@@ -65,6 +65,7 @@ jobs:
             -v /dev:/dev -v /var/lib/containers:/var/lib/containers -v "$PWD:/sortie" \
             "${IMAGE}" bootc install to-disk --via-loopback --generic-image --filesystem btrfs \
               --root-ssh-authorized-keys /sortie/vm_key.pub --karg systemd.wants=sshd.service \
+              --karg rhgb --karg quiet \
               /sortie/disque.raw || { sudo dmesg | grep -iE 'apparmor|denied' | tail -15; exit 1; }
           sudo chown "$(id -u):$(id -g)" disque.raw
 
@@ -80,6 +81,8 @@ jobs:
             -device virtio-vga -display none \
             -netdev user,id=n0,hostfwd=tcp:127.0.0.1:2222-:22 -device virtio-net-pci,netdev=n0 \
             -monitor unix:/tmp/qemu-mon,server,nowait -serial file:resultats/console.log -daemonize
+          # photos pendant le démarrage (logo Thomas OS), analysées à l'étape suivante
+          ( for n in $(seq -w 1 18); do sleep 1; python3 ci/vm/photo.py /tmp/qemu-mon "resultats/boot-${n}.png" >/dev/null 2>&1; done ) &
           for i in $(seq 120); do
             ${SSH} true 2>/dev/null && { echo "VM joignable après $((i * 5)) s"; exit 0; }
             sleep 5
@@ -94,6 +97,9 @@ jobs:
           bash ci/vm/dans-la-vm.sh demarrage | tee resultats/rapport.txt
           sleep 10
           python3 ci/vm/photo.py /tmp/qemu-mon resultats/1-connexion.png
+          # fin des photos du démarrage (lancées en fond à l'étape d'avant)
+          for _ in $(seq 60); do [[ "$(ls resultats/boot-*.png 2>/dev/null | wc -l)" -ge 18 ]] && break; sleep 1; done
+          python3 ci/vm/logo.py resultats | tee -a resultats/rapport.txt
 
       - name: 1re ouverture de session
         run: |

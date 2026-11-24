@@ -164,6 +164,8 @@ jobs:
           python3 ci/vm/touches.py "${MON}" "texte:secureboot" ret; sleep 3
           python3 ci/vm/photo.py "${MON}" resultats/8-mok-fini.png
           python3 ci/vm/touches.py "${MON}" ret
+          # photos pendant le démarrage : logo Thomas OS (analysées à la vérification)
+          ( for n in $(seq -w 1 18); do sleep 1; python3 ci/vm/photo.py "${MON}" "resultats/boot-${n}.png" >/dev/null 2>&1; done ) &
           attendre_ssh() { for i in $(seq 120); do ${SSH} true 2>/dev/null && { echo "système installé joignable après $((i * 5)) s"; return 0; }; sleep 5; done; return 1; }
           attendre_ssh || true
           # Au 1er démarrage, Bazzite règle le matériel puis redémarre une fois tout seul (constaté en VM) :
@@ -196,6 +198,10 @@ jobs:
           if ${SSH} cat /usr/lib/os-release 2>/dev/null | grep -q '^NAME="Thomas OS"'; then ok "c'est bien Thomas OS"; else ko "os-release"; fi
           suivi="$(${SSH} rpm-ostree status --booted --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["deployments"][0].get("container-image-reference",""))' || true)"
           if [[ "${suivi}" == *thomas-os:${{ inputs.canal }}* ]]; then ok "mises à jour : suit ${suivi}"; else ko "image suivie : ${suivi:-?}"; fi
+          ligne="$(${SSH} cat /proc/cmdline 2>/dev/null || true)"
+          echo "INFO    arguments du noyau : ${ligne}" | tee -a resultats/rapport.txt
+          if [[ " ${ligne} " == *" rhgb "* && " ${ligne} " == *" quiet "* ]]; then ok "logo de démarrage activé (rhgb quiet)"; else ko "pas de rhgb quiet : le PC démarrerait en texte qui défile"; fi
+          python3 ci/vm/logo.py resultats | tee -a resultats/rapport.txt || true
           cible="$(${SSH} systemctl get-default 2>/dev/null || true)"
           if [[ "${cible}" == graphical.target ]]; then ok "démarre en mode graphique (${cible})"; else ko "mode de démarrage : ${cible:-?} (attendu graphical.target)"; fi
           if ${SSH} systemctl is-active --quiet display-manager; then ok "écran de connexion lancé"; else

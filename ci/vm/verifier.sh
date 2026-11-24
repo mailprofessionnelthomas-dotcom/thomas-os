@@ -37,6 +37,11 @@ demarrage)
     img="$(en_root bootc status --format json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"]["booted"]["image"]["image"]["image"])' 2>/dev/null)"
     if [[ "${img}" == *thomas-os* ]]; then ok "les mises à jour suivent ${img}"; else ko "bootc : image suivie inconnue (${img:-?})"; fi
     if systemctl is-active --quiet display-manager; then ok "écran de connexion lancé"; else ko "écran de connexion absent"; fi
+    if grep -q 'wallpapers/ThomasOS' /usr/lib/plasmalogin/defaults.conf 2>/dev/null; then ok "écran de connexion : fond Thomas OS"; else ko "écran de connexion : fond pas réglé"; fi
+    if [[ "$(plymouth-set-default-theme 2>/dev/null)" == thomas-os && -f /usr/share/plymouth/themes/thomas-os/thomas-os.plymouth ]]; then
+        ok "logo de démarrage : thème thomas-os"
+    else ko "logo de démarrage : thème $(plymouth-set-default-theme 2>/dev/null || echo ?)"; fi
+    info "arguments du noyau : $(cat /proc/cmdline)"
     if systemctl is-enabled --quiet thomas-flatpak-preinstall.timer; then ok "installation des applis programmée"; else ko "timer des applis"; fi
     if [[ "$(readlink -f /etc/systemd/system/rpm-ostree-countme.timer)" == /dev/null ]]; then ok "télémétrie Fedora coupée"; else ko "compteur Fedora actif"; fi
     ;;

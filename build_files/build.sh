@@ -159,6 +159,17 @@ install -D -m 0644 /ctx/identite/tokens.json /usr/share/thomas-os/identite/token
 install -D -m 0644 /ctx/identite/logo/thomas-os.svg /usr/share/icons/hicolor/scalable/apps/thomas-os.svg
 install -D -m 0644 /ctx/identite/logo/thomas-os.svg /usr/share/thomas-os/identite/logo/thomas-os.svg
 python3 /ctx/identite/fond.py /usr/share/wallpapers/ThomasOS
+#     Écran de connexion (Plasma Login Manager) : fond Thomas OS. Constaté : Bazzite y met le sien via
+#     /usr/lib/plasmalogin/defaults.conf (paquet kde-settings-plasmalogin), lu en premier par l'accueil.
+PLM_DEFAUTS=/usr/lib/plasmalogin/defaults.conf
+FOND_THOMAS="file:///usr/share/wallpapers/ThomasOS/contents/images/2560x1440.png"
+if [[ -f "${PLM_DEFAUTS}" ]]; then
+    sed -i -E "s#^(Image|PreviewImage)=.*#\1=${FOND_THOMAS}#" "${PLM_DEFAUTS}"
+else
+    install -d "$(dirname "${PLM_DEFAUTS}")"
+    printf '[Greeter]\nWallpaperPlugin=org.kde.image\n\n[Greeter][Wallpaper][org.kde.image][General]\nImage=%s\nPreviewImage=%s\n' \
+        "${FOND_THOMAS}" "${FOND_THOMAS}" >"${PLM_DEFAUTS}"
+fi
 #     Alt+Espace ouvre le menu Thomas OS : la recherche KRunner garde Alt+F2 et la touche Recherche.
 #     Constaté (Plasma 6.8) : le raccourci est dans /usr/share/kglobalaccel/org.kde.krunner.desktop, qui contient
 #     aussi une 2e action (Alt+Maj+F2) : on retire seulement « Alt+Space », rien d'autre.
@@ -252,8 +263,51 @@ THOMAS_OS_BUILD_DATE=$(date -u +%Y-%m-%d)
 EOF
 chmod 0644 /usr/share/thomas-os/info.env
 
+# 4b. Logo de démarrage : thème Plymouth « thomas-os » (T animé, fabriqué ici en Python standard).
+#     Constaté : le thème est copié dans l'initramfs de l'image (Bazzite : « bgrt »), il faut donc le refaire,
+#     avec les mêmes options que Bazzite (lues dans l'initramfs : --no-hostonly --reproducible --add fido2 ;
+#     le reste vient de /usr/lib/dracut/dracut.conf.d). En dernier : il embarque aussi le nouvel os-release.
+PLY=/usr/share/plymouth/themes/thomas-os
+python3 /ctx/identite/plymouth.py "${PLY}"
+for f in bullet.png capslock.png entry.png keyboard.png keymap-render.png lock.png; do  # fenêtre de mot de passe
+    [[ -f "/usr/share/plymouth/themes/spinner/${f}" ]] && install -m 0644 "/usr/share/plymouth/themes/spinner/${f}" "${PLY}/"
+done
+sed -i 's/^Theme=.*/Theme=thomas-os/' /usr/share/plymouth/plymouthd.defaults
+grep -q '^Theme=thomas-os$' /usr/share/plymouth/plymouthd.defaults
+if grep -q '^Theme=' /etc/plymouth/plymouthd.conf 2>/dev/null; then sed -i 's/^Theme=.*/Theme=thomas-os/' /etc/plymouth/plymouthd.conf; fi
+[[ "$(plymouth-set-default-theme)" == thomas-os ]] || { echo "ERREUR : thème de démarrage pas choisi"; exit 1; }
+mapfile -t NOYAUX < <(ls /usr/lib/modules)
+[[ ${#NOYAUX[@]} -eq 1 ]] || { echo "ERREUR : ${#NOYAUX[@]} noyaux dans l'image (${NOYAUX[*]}), 1 attendu"; exit 1; }
+KVER="${NOYAUX[0]}"
+INITRAMFS="/usr/lib/modules/${KVER}/initramfs.img"
+modules_dracut() { { lsinitrd "$1" 2>/dev/null || true; } | sed -n '/^dracut modules:$/,/^=\{10,\}/p' | { grep -vE '^dracut modules:$|^={10,}' || true; } | sort -u; }
+MODULES_AVANT="$(modules_dracut "${INITRAMFS}")"
+DRACUT_TMP="$(mktemp -d /tmp/dracut.XXXXXX)"
+dracut --no-hostonly --kver "${KVER}" --reproducible --add fido2 --tmpdir "${DRACUT_TMP}" -f "${INITRAMFS}"
+rm -rf "${DRACUT_TMP}"
+chmod 0600 "${INITRAMFS}"
+echo "initramfs refait : $(du -h "${INITRAMFS}" | cut -f1)"
+#     Garde-fous : rien perdu par rapport à celui de Bazzite (sinon le PC pourrait ne plus démarrer), et le thème y est
+MODULES_APRES="$(modules_dracut "${INITRAMFS}")"
+[[ -n "${MODULES_AVANT}" ]] || { echo "ERREUR : modules de l'initramfs de Bazzite illisibles"; exit 1; }
+MANQUE="$(comm -23 <(echo "${MODULES_AVANT}") <(echo "${MODULES_APRES}"))"
+[[ -z "${MANQUE}" ]] || { echo "ERREUR : modules perdus dans l'initramfs : $(echo ${MANQUE})"; exit 1; }
+for m in ostree bootc plymouth systemd; do
+    grep -qx "${m}" <<<"${MODULES_APRES}" || { echo "ERREUR : module ${m} absent de l'initramfs"; exit 1; }
+done
+CONTENU_INITRAMFS="$(mktemp)"
+lsinitrd "${INITRAMFS}" >"${CONTENU_INITRAMFS}"
+for f in thomas-os.plymouth throbber-0001.png throbber-0048.png lock.png; do
+    grep -q "usr/share/plymouth/themes/thomas-os/${f}" "${CONTENU_INITRAMFS}" || { echo "ERREUR : ${f} absent de l'initramfs"; exit 1; }
+done
+rm -f "${CONTENU_INITRAMFS}"
+lsinitrd -f usr/share/plymouth/plymouthd.defaults "${INITRAMFS}" | grep -q '^Theme=thomas-os$' \
+    || { echo "ERREUR : l'initramfs ne choisit pas le thème thomas-os"; exit 1; }
+echo "initramfs : $(wc -l <<<"${MODULES_APRES}") modules dracut (avant : $(wc -l <<<"${MODULES_AVANT}")), thème thomas-os inclus"
+
 # 5. Vérifications : si un de ces tests rate, le build s'arrête (rouge sur GitHub)
 grep -q '^NAME="Thomas OS"' "${OS_RELEASE}"
+grep -q "^Image=${FOND_THOMAS}$" "${PLM_DEFAUTS}" || { echo "ERREUR : écran de connexion sans le fond Thomas OS"; exit 1; }
 test -s /usr/share/thomas-os/info.env
 for pkg in code claude-code nodejs nodejs-npm python3 python3-pip git papirus-icon-theme; do
     rpm -q "${pkg}" >/dev/null || { echo "ERREUR : paquet ${pkg} absent"; exit 1; }
