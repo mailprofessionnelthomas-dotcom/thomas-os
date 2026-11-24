@@ -69,6 +69,18 @@ ostreecontainer --url=${image}:${canal} --transport=containers-storage --no-sign
 bootc switch --mutate-in-place --transport registry ${image}:${canal}
 %end
 
+# Étiquettes SELinux remises en place (repris de Bazzite : sinon des fichiers de sécurité restent mal étiquetés)
+%post --erroronfail --log=/tmp/thomas-os-journaux/selinux.log
+setenforce 0 || true
+restorecon -R /etc/selinux
+restorecon -R /var/lib/flatpak || true
+%end
+
+# Pas de dépôt Flatpak de Fedora : Thomas OS installe ses applis depuis Flathub
+%post --erroronfail --log=/tmp/thomas-os-journaux/flatpak.log
+systemctl disable flatpak-add-fedora-repos.service || :
+%end
+
 # Secure Boot : la clé du noyau est proposée au micrologiciel ; elle s'enregistre au 1er redémarrage (écran bleu MOK)
 %post --erroronfail --nochroot --log=/tmp/thomas-os-journaux/secureboot.log
 set -uo pipefail
