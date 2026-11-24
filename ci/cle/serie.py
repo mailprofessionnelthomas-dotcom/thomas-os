@@ -146,7 +146,18 @@ def main():
         print(f"INFO    installateur terminé (code {fin.group(1) if fin else '?'})", flush=True)
         s.commande("cat /tmp/yad.log 2>/dev/null | sed 's/^/INFO    fenêtre : /'", 30)
         s.commande("tail -n 15 /tmp/thomas-os-journaux/*.log", 60)
-        s.envoyer("poweroff\r")  # comme « Éteindre » après l'installation ; GitHub redémarre ensuite sur le disque
+        s.commande("sync", 120)
+        # comme « Éteindre » après l'installation ; GitHub redémarre ensuite sur le disque.
+        # On lit la console pendant l'arrêt : si quelque chose bloque, ses messages restent dans le journal.
+        depuis, t0 = len(s.tout), time.time()
+        s.envoyer("poweroff\r")
+        s.chercher_depuis(r"reboot: Power down", depuis, 10 * 60)
+        if getattr(s, "ferme", False) or "reboot: Power down" in s.tout[depuis:]:
+            print(f"OK      session live éteinte en {time.time() - t0:.0f} s", flush=True)
+        else:
+            bloque = re.findall(r"A stop job is running for ([^\r\n(]+)", s.tout[depuis:])
+            print("ATTENTION la session live ne s'éteint pas en 10 min"
+                  + (f" (attend : {bloque[-1].strip()})" if bloque else ""), flush=True)
         return 0
     raison = m.group(1) if m else ("VM éteinte avant la fin" if getattr(s, "ferme", False) else "pas de fin au bout de 60 min")
     print(f"ECHEC   installation : {raison}", flush=True)
