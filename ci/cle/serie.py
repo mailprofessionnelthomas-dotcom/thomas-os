@@ -115,21 +115,26 @@ def main():
     if rc != 0:
         sys.exit(f"ECHEC : faux yad pas installé ({rc})")
 
-    etape("réponses de test : elles remplacent interactive-defaults.ks, qui inclut le fichier d'origine tel quel")
-    # (en mode « live », Anaconda ne lit que ce fichier : --kickstart y est ignoré, constaté sur GitHub)
+    etape("réponses de test (elles incluent les vrais réglages de la clé, tels quels)")
     contenu = base64.b64encode(open(kickstart, "rb").read()).decode()
     s.commande("rm -f /tmp/ks.b64")
     for i in range(0, len(contenu), 400):
         s.commande(f"echo -n {contenu[i:i + 400]} >>/tmp/ks.b64")
     if s.commande("cp /usr/share/anaconda/interactive-defaults.ks /tmp/defaults-origine.ks && "
-                  "base64 -d /tmp/ks.b64 >/usr/share/anaconda/interactive-defaults.ks && "
-                  "grep -q defaults-origine /usr/share/anaconda/interactive-defaults.ks") != 0:
+                  "base64 -d /tmp/ks.b64 >/tmp/test.ks && grep -q defaults-origine /tmp/test.ks") != 0:
         sys.exit("ECHEC : réponses de test mal copiées")
+    # Test seulement (copie en mémoire de la session live) : en mode « live », Anaconda ignore toujours un fichier
+    # de réponses, et sans lui le disque n'est jamais choisi tout seul (lu dans pyanaconda/startup_utils.py).
+    rc = s.commande("f=$(python3 -c 'import pyanaconda.startup_utils as m; print(m.__file__)') && "
+                    "sed -i 's/if options.ksfile and not options.liveinst:/if options.ksfile:/' \"$f\" && "
+                    "grep -q 'if options.ksfile:$' \"$f\"", 60)
+    if rc != 0:
+        sys.exit(f"ECHEC : installateur pas adapté au test ({rc})")
 
     etape("installation (installateur sans interface, mêmes réglages que le vrai)")
     # son propre bus D-Bus de session : sans lui, l'installateur s'arrête net (il veut bloquer la mise en veille)
     depuis = len(s.tout)
-    if s.commande("(dbus-run-session -- anaconda --liveinst --cmdline >/tmp/install.log 2>&1; "
+    if s.commande("(dbus-run-session -- anaconda --liveinst --cmdline --kickstart=/tmp/test.ks >/tmp/install.log 2>&1; "
                   "echo \"THOMAS-INSTALL: anaconda fini, code $?\" >/dev/ttyS0) </dev/null >/dev/null 2>&1 &") != 0:
         sys.exit("ECHEC : installateur pas lancé")
     debut = time.time()
