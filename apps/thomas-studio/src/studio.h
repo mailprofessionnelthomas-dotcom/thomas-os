@@ -59,6 +59,7 @@ public:
     Q_INVOKABLE void exporter(const QUrl &fichier);
     Q_INVOKABLE QString cheminLocal(const QUrl &url) const { return url.toLocalFile(); }
     Q_INVOKABLE QUrl fichierExport() const;  // Documents/<style>.conf, proposé à l'export
+    Q_INVOKABLE bool fichierExiste(const QString &chemin) const;
 
 public Q_SLOTS:
     void actualiser();

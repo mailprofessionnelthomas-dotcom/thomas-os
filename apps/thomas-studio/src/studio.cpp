@@ -6,6 +6,7 @@
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QStandardPaths>
@@ -217,9 +218,10 @@ QVariantMap Studio::appli(const QString &id) const
     } else if (id == u"trash"_s) {
         r = {{u"nom"_s, u"Corbeille"_s}, {u"icone"_s, u"user-trash"_s}};
     } else {
-        // nom et icône lus dans le .desktop de l'appli (RPM ou Flatpak)
-        QFile f(QStandardPaths::locate(QStandardPaths::ApplicationsLocation, id + u".desktop"_s));
-        if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        // nom et icône lus dans le .desktop de l'appli (RPM ou Flatpak ; une appli Flatpak pas encore installée garde son id)
+        const QString chemin = QStandardPaths::locate(QStandardPaths::ApplicationsLocation, id + u".desktop"_s);
+        QFile f(chemin);
+        if (!chemin.isEmpty() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
             bool entree = false;
             QString nom, nomFr;
             while (!f.atEnd()) {
@@ -329,6 +331,11 @@ void Studio::importer(const QUrl &fichier)
         Q_EMIT message(u"Style importé"_s);
         ouvrir(r.value(0).toString());
     });
+}
+
+bool Studio::fichierExiste(const QString &chemin) const
+{
+    return !chemin.isEmpty() && QFileInfo(chemin).isFile();
 }
 
 QUrl Studio::fichierExport() const

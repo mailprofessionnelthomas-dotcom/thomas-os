@@ -40,7 +40,7 @@ Item {
     readonly property color cInactif: mix(cTexte, cFen, 0.45)
     readonly property color fondHaut: v("couleurs", "fond_haut", "#1a0003")
     readonly property color fondBas: v("bureau", "fond", "degrade") === "uni" ? fondHaut : v("couleurs", "fond_bas", "#050506")
-    readonly property bool fondImage: v("bureau", "fond", "degrade") === "image" && v("bureau", "fond_image", "") !== ""
+    readonly property bool fondImage: v("bureau", "fond", "degrade") === "image" && Studio.fichierExiste(v("bureau", "fond_image", ""))
     readonly property color couleurHorloge: fondImage ? "white" : (lum(mix(fondHaut, fondBas, 0.3)) > 0.55 ? cTexte : "white")
     // ----- formes et effets -----
     readonly property real bw: n("effets", "epaisseur_bordure", 0)
