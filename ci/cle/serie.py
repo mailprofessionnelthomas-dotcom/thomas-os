@@ -24,6 +24,7 @@ class Serie:
         self.s.connect(chemin)
         self.s.settimeout(1)
         self.tampon = ""
+        self.tout = ""  # toute la sortie depuis le début (un repère déjà passé n'est jamais perdu)
         self.journal = open(journal, "a", encoding="utf-8", errors="replace")
         self.n = 0
 
@@ -33,8 +34,18 @@ class Serie:
         except socket.timeout:
             d = ""
         self.tampon += d
+        self.tout += d
         self.journal.write(d)
         self.journal.flush()
+
+    def chercher_depuis(self, motif, depuis, delai):
+        fin = time.time() + delai
+        while time.time() < fin:
+            self.lire()
+            m = re.search(motif, self.tout[depuis:])
+            if m:
+                return m
+        return None
 
     def attendre(self, motif, delai):
         fin = time.time() + delai
@@ -106,12 +117,13 @@ def main():
         sys.exit("ECHEC : kickstart mal copié")
 
     etape("installation (installateur sans interface, mêmes réglages que le vrai)")
-    if s.commande("(anaconda --liveinst --cmdline --kickstart=/tmp/test.ks >/tmp/install.log 2>&1; "
+    # son propre bus D-Bus de session : sans lui, l'installateur s'arrête net (il veut bloquer la mise en veille)
+    depuis = len(s.tout)
+    if s.commande("(dbus-run-session -- anaconda --liveinst --cmdline --kickstart=/tmp/test.ks >/tmp/install.log 2>&1; "
                   "echo \"THOMAS-INSTALL: anaconda fini, code $?\" >/dev/ttyS0) </dev/null >/dev/null 2>&1 &") != 0:
         sys.exit("ECHEC : installateur pas lancé")
-    s.commande("sleep 20; pgrep -af 'anaconda --liveinst --cmdline' | head -2", 60)
     debut = time.time()
-    m = s.attendre(r"THOMAS-INSTALL: (post fini[^\r\n]*|anaconda fini, code \d+)", 60 * 60)
+    m = s.chercher_depuis(r"THOMAS-INSTALL: (post fini[^\r\n]*|anaconda fini, code \d+)", depuis, 60 * 60)
     duree = (time.time() - debut) / 60
     if m and m.group(1).startswith("post fini"):
         print(f"OK      installation finie en {duree:.0f} min ; {m.group(1)}", flush=True)
