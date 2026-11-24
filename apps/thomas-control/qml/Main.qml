@@ -66,17 +66,24 @@ Kirigami.ApplicationWindow {
         }
     }
 
+    // La page est créée ici, déjà rattachée à la fenêtre (sinon Qt prévient « objet pas placé dans la scène »),
+    // puis l'ancienne page créée de la même façon est détruite.
+    property Item pageCreee: null
     function ouvrir(c) {
         const pages = { accueil: "PageAccueil.qml", systeme: "PageSysteme.qml", apparence: "PageApparence.qml",
                         performances: "PagePerformances.qml", gaming: "PageGaming.qml", maintenance: "PageMaintenance.qml",
                         reseau: "PageReseau.qml" }
-        if (c.page === "reseau") {
-            pageStack.replace(Qt.resolvedUrl(pages.reseau), { title: c.nom, categorie: c })
-        } else if (c.page) {
-            pageStack.replace(Qt.resolvedUrl(pages[c.page]), { title: c.nom })
-        } else {
-            pageStack.replace(Qt.resolvedUrl("PageCategorie.qml"), { title: c.nom, categorie: c })
+        const composant = Qt.createComponent(Qt.resolvedUrl(c.page ? pages[c.page] : "PageCategorie.qml"))
+        const proprietes = { title: c.nom }
+        if (!c.page || c.page === "reseau") proprietes.categorie = c
+        const page = composant.createObject(pageStack, proprietes)
+        if (!page) {
+            showPassiveNotification(composant.errorString())
+            return
         }
+        pageStack.replace(page)
+        if (pageCreee) pageCreee.destroy()
+        pageCreee = page
     }
 
     Connections {
