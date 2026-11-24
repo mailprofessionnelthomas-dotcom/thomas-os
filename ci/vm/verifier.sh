@@ -54,7 +54,7 @@ session)
 situation)
     # le bureau en usage : une fenêtre (Dolphin) et une notification, dans la session de « testeur »
     u="$(id -u testeur)"
-    E=(XDG_RUNTIME_DIR="/run/user/${u}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" WAYLAND_DISPLAY="$(ecran_wayland "${u}")" QT_QPA_PLATFORM=wayland)
+    E=(XDG_RUNTIME_DIR="/run/user/${u}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" WAYLAND_DISPLAY="$(ecran_wayland "${u}")" QT_QPA_PLATFORM=wayland XDG_CURRENT_DESKTOP=KDE KDE_FULL_SESSION=true)
     applets="$(getent passwd testeur | cut -d: -f6)/.config/plasma-org.kde.plasma.desktop-appletsrc"
     n="$(grep -c '^plugin=org.thomasos.barre$' "${applets}" 2>/dev/null)"
     if [[ "${n:-0}" -ge 2 ]]; then ok "barre Thomas OS en place (${n} moitiés autour du logo)"; else ko "barre Thomas OS absente (${n:-0})"; fi
@@ -93,7 +93,7 @@ control)
     # Thomas Control : s'ouvre, reste ouvert, sans erreur QML
     u="$(id -u testeur)"
     E=(XDG_RUNTIME_DIR="/run/user/${u}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" WAYLAND_DISPLAY="$(ecran_wayland "${u}")"
-       QT_QPA_PLATFORM=wayland QT_FORCE_STDERR_LOGGING=1)
+       QT_QPA_PLATFORM=wayland XDG_CURRENT_DESKTOP=KDE KDE_FULL_SESSION=true QT_FORCE_STDERR_LOGGING=1)
     runuser -u testeur -- env "${E[@]}" thomas-control >/tmp/control.log 2>&1 &
     sleep 6
     if pgrep -u testeur -x thomas-control >/dev/null; then ok "Thomas Control ouvert"; else

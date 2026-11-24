@@ -80,5 +80,7 @@ Kirigami.ApplicationWindow {
         function onErreur(message) { fenetre.showPassiveNotification(message) }
     }
 
-    pageStack.initialPage: Qt.resolvedUrl("PageAccueil.qml")
+    // page d'accueil donnée comme composant : la pile de pages la crée elle-même, à sa place
+    Component { id: pageAccueil; PageAccueil {} }
+    pageStack.initialPage: pageAccueil
 }
