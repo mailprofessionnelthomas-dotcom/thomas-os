@@ -81,6 +81,18 @@ menu)
     runuser -u testeur -- env DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" gdbus call --session --dest org.kde.plasmashell \
         --object-path /PlasmaShell --method org.kde.PlasmaShell.activateLauncherMenu >/dev/null && ok "menu ouvert"
     ;;
+avant-alt-espace)
+    # vrai clavier : la touche est envoyée par QEMU entre « avant » et « apres »
+    maison="$(getent passwd testeur | cut -d: -f6)"
+    if pgrep -u testeur -x krunner >/dev/null; then echo oui >/tmp/krunner-avant; else echo non >/tmp/krunner-avant; fi
+    info "KRunner lancé avant la touche : $(cat /tmp/krunner-avant)"
+    grep -B1 -iE 'alt\+space' "${maison}/.config/kglobalshortcutsrc" 2>/dev/null | sed 's/^/INFO    raccourci : /'
+    ;;
+apres-alt-espace)
+    if [[ "$(cat /tmp/krunner-avant)" == non ]] && pgrep -u testeur -x krunner >/dev/null; then
+        ko "Alt+Espace a ouvert la recherche KRunner au lieu du menu"
+    else ok "Alt+Espace n'ouvre pas KRunner"; fi
+    ;;
 core)
     # Thomas Core : répond à la demande, puis s'arrête seul au repos
     u="$(id -u testeur)"
@@ -193,6 +205,6 @@ applis)
     info "applis Flatpak installées : $(flatpak list --app --columns=application | tr '\n' ' ')"
     ;;
 *)
-    echo "usage : verifier.sh demarrage|preparer|session|situation|menu|core|control|studio|style-studio|annuler|applis"; exit 2 ;;
+    echo "usage : verifier.sh demarrage|preparer|session|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|applis"; exit 2 ;;
 esac
 exit $((erreurs > 0))

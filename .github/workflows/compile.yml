@@ -38,17 +38,6 @@ jobs:
           podman build --target compilation -t thomas-os-compilation -f Containerfile .
           podman run --rm thomas-os-compilation find /sortie -type f | sed 's/^/compilé : /'
 
-      - name: "Diagnostic (temporaire) : où est le raccourci de KRunner ?"
-        continue-on-error: true
-        run: |
-          podman run --rm thomas-os-compilation bash -c '
-            find / -xdev \( -name "*krunner*.desktop" -o -name "*krunner*.json" \) 2>/dev/null | grep -v "^/proc"
-            echo "--- lignes Alt+Space / X-KDE-Shortcuts"
-            grep -rIn -e "Alt+Space" -e "X-KDE-Shortcuts" /usr/share/applications /usr/share/kglobalaccel /usr/share/krunner /etc/xdg 2>/dev/null | head -20
-            echo "--- kglobalaccel"; ls /usr/share/kglobalaccel | head -40
-            echo "--- fichier krunner"; cat /usr/share/applications/org.kde.krunner.desktop 2>/dev/null | grep -v "^Name\[" | grep -v "^Comment\[" | head -30
-            rpm -q plasma-workspace krunner 2>/dev/null'
-
       - name: Essayer Thomas Studio (sans écran, avec Thomas Core)
         run: |
           mkdir -p essai

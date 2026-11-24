@@ -159,12 +159,18 @@ install -D -m 0644 /ctx/identite/tokens.json /usr/share/thomas-os/identite/token
 install -D -m 0644 /ctx/identite/logo/thomas-os.svg /usr/share/icons/hicolor/scalable/apps/thomas-os.svg
 install -D -m 0644 /ctx/identite/logo/thomas-os.svg /usr/share/thomas-os/identite/logo/thomas-os.svg
 python3 /ctx/identite/fond.py /usr/share/wallpapers/ThomasOS
-#     Alt+Espace ouvre le menu Thomas OS : la recherche KRunner garde Alt+F2 et la touche Recherche
-for f in /usr/share/applications/org.kde.krunner.desktop /usr/share/kglobalaccel/org.kde.krunner.desktop; do
-    [[ -e "${f}" ]] && sed -i --follow-symlinks 's/^X-KDE-Shortcuts=.*/X-KDE-Shortcuts=Alt+F2,Search/' "${f}"
+#     Alt+Espace ouvre le menu Thomas OS : la recherche KRunner garde Alt+F2 et la touche Recherche.
+#     Constaté (Plasma 6.8) : le raccourci est dans /usr/share/kglobalaccel/org.kde.krunner.desktop, qui contient
+#     aussi une 2e action (Alt+Maj+F2) : on retire seulement « Alt+Space », rien d'autre.
+for f in /usr/share/kglobalaccel/org.kde.krunner.desktop /usr/share/applications/org.kde.krunner.desktop; do
+    [[ -e "${f}" ]] && sed -i --follow-symlinks 's/^X-KDE-Shortcuts=Alt+Space,/X-KDE-Shortcuts=/' "${f}"
 done
-grep -q '^X-KDE-Shortcuts=Alt+F2,Search$' /usr/share/applications/org.kde.krunner.desktop \
-    || echo "::warning::raccourci de KRunner non trouvé : Alt+Espace peut rester à la recherche"
+grep -q '^X-KDE-Shortcuts=Alt+F2,Search$' /usr/share/kglobalaccel/org.kde.krunner.desktop \
+    || { echo "ERREUR : raccourci de KRunner introuvable (Alt+Espace resterait à la recherche)"; exit 1; }
+if grep -rqs '^X-KDE-Shortcuts=\(.*,\)\?Alt+Space\(,\|$\)' /usr/share/kglobalaccel /usr/share/applications; then
+    echo "ERREUR : Alt+Espace est encore pris par une autre appli"
+    exit 1
+fi
 #     Favoris du menu (mécanisme Fedora/Bazzite) : ceux de Thomas OS, à la place de ceux de Bazzite
 KICKER_FAV=/usr/share/kde-settings/kde-profile/default/xdg/kicker-extra-favoritesrc
 install -d "$(dirname "${KICKER_FAV}")"

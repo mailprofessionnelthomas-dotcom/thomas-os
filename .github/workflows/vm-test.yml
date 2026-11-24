@@ -109,6 +109,15 @@ jobs:
           bash ci/vm/dans-la-vm.sh menu | tee -a resultats/rapport.txt
           sleep 3
           python3 ci/vm/photo.py /tmp/qemu-mon resultats/4-menu.png
+          # le même menu, mais avec le vrai clavier : Alt+Espace (KRunner doit rester sur Alt+F2)
+          python3 ci/vm/touches.py /tmp/qemu-mon esc
+          sleep 2
+          bash ci/vm/dans-la-vm.sh avant-alt-espace | tee -a resultats/rapport.txt
+          python3 ci/vm/touches.py /tmp/qemu-mon alt-spc
+          sleep 4
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/4b-alt-espace.png
+          bash ci/vm/dans-la-vm.sh apres-alt-espace | tee -a resultats/rapport.txt
+          python3 ci/vm/touches.py /tmp/qemu-mon esc
 
       - name: Thomas Core et Thomas Control
         run: |
