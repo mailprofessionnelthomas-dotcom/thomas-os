@@ -291,6 +291,12 @@ phase8)
     if [[ "${r}" == *latence_ms* ]]; then ok "diagnostic réseau : ${r:0:220}"; else ko "diagnostic réseau : ${r:0:220}"; fi
     r="$(style_core_systeme TestDebit Diagnostic1)"
     if [[ "${r}" == *debit_mbps* ]]; then ok "débit mesuré : ${r:0:160}"; else ko "débit : ${r:0:200}"; fi
+    # surveillance avec les vrais capteurs et un état neuf : rien d'anormal dans la VM => aucune alerte
+    rm -rf /tmp/etat-neuf
+    install -d -o testeur /tmp/etat-neuf
+    r="$("${SU[@]}" XDG_STATE_HOME=/tmp/etat-neuf /usr/libexec/thomas-surveillance)"
+    if [[ -z "${r}" ]]; then ok "surveillance : aucune fausse alerte (disque, températures)"; else ko "surveillance : fausse alerte (${r})"; fi
+    info "disques vus par la surveillance : $("${SU[@]}" python3 -c 'import sys; sys.path.insert(0, "/usr/lib/thomas-os/python"); from thomas_os import capteurs; print([(p, l // 2**30) for p, _, l in capteurs.disques()])')"
     # surveillance : faux capteur à 99 °C => une alerte (photographiée juste après)
     rm -rf /tmp/faux-hwmon /tmp/faux-etat
     install -d -o testeur /tmp/faux-hwmon/hwmon0 /tmp/faux-etat

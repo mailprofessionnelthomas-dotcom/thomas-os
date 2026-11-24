@@ -59,14 +59,17 @@ def seuil(limite):
 
 
 def disques():
-    """[(point de montage, octets au total, octets libres)], une fois par système de fichiers."""
+    """[(point de montage, octets au total, octets libres)], une fois par système de fichiers où l'on écrit.
+    Constaté en VM : sur Thomas OS (bootc), « / » est en lecture seule et annonce 0 octet libre ; il est ignoré
+    (sinon : fausse alerte « disque plein »). Tes fichiers et les applis sont dans /var."""
     vus, sortie = set(), []
-    for point in ("/var/home", "/", "/var"):
+    for point in ("/var/home", "/var", "/"):
         try:
             dev = os.stat(point).st_dev
+            infos = os.statvfs(point)
         except OSError:
             continue
-        if dev in vus:
+        if dev in vus or infos.f_flag & os.ST_RDONLY or infos.f_blocks == 0:
             continue
         vus.add(dev)
         u = shutil.disk_usage(point)
