@@ -109,7 +109,8 @@ jobs:
           python3 ci/vm/photo.py "${MON}" resultats/1-menu-de-demarrage.png
           python3 ci/vm/touches.py "${MON}" e
           sleep 1
-          python3 ci/vm/touches.py "${MON}" end "texte: console=ttyS0,115200 console=tty0"
+          # l'éditeur s'ouvre sur « setparams », puis une ligne vide : la ligne « linux » est la 3e
+          python3 ci/vm/touches.py "${MON}" down down end "texte: console=ttyS0,115200 console=tty0"
           python3 ci/vm/photo.py "${MON}" resultats/2-menu-modifie.png
           python3 ci/vm/touches.py "${MON}" ctrl-x
 

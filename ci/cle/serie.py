@@ -47,7 +47,14 @@ class Serie:
         return None
 
     def envoyer(self, texte):
-        self.s.sendall(texte.encode())
+        # si personne ne lit la console série dans la VM (pas encore d'invite), l'envoi attend : on patiente un peu
+        self.s.settimeout(30)
+        try:
+            self.s.sendall(texte.encode())
+        except socket.timeout:
+            pass
+        finally:
+            self.s.settimeout(1)
 
     def commande(self, c, delai=120):
         """Lance une commande dans le shell root et renvoie son code de sortie (None si pas de réponse)."""
