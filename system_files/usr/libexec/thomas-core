@@ -43,7 +43,18 @@ XML = """<node>
     <method name="Actuel"><arg type="s" direction="out"/></method>
     <method name="Appliquer"><arg name="id" type="s" direction="in"/><arg name="disposition" type="s" direction="in"/></method>
     <method name="Secours"/>
+    <method name="Annuler"/>
+    <method name="PeutAnnuler"><arg type="b" direction="out"/></method>
+    <method name="Catalogue"><arg type="s" direction="out"/></method>
+    <method name="Lire"><arg name="id" type="s" direction="in"/><arg type="s" direction="out"/></method>
+    <method name="Enregistrer"><arg name="id" type="s" direction="in"/><arg name="reglages" type="s" direction="in"/>
+      <arg name="id_final" type="s" direction="out"/><arg name="corrections" type="as" direction="out"/></method>
+    <method name="Importer"><arg name="chemin" type="s" direction="in"/>
+      <arg name="id" type="s" direction="out"/><arg name="corrections" type="as" direction="out"/></method>
+    <method name="Exporter"><arg name="id" type="s" direction="in"/><arg name="chemin" type="s" direction="in"/></method>
+    <method name="Supprimer"><arg name="id" type="s" direction="in"/></method>
     <signal name="StyleChange"><arg name="id" type="s"/></signal>
+    <signal name="ListeChange"/>
   </interface>
   <interface name="org.thomasos.Diagnostic1">
     <method name="Rapport"><arg type="s" direction="out"/></method>
@@ -128,13 +139,19 @@ class Service:
             GLib.source_remove(self.minuterie)
         self.minuterie = GLib.timeout_add_seconds(INACTIF_S, self.boucle.quit)
 
-    def appliquer(self, sid, dispo):
-        args = [os.environ.get("THOMAS_STYLE_BIN", "/usr/bin/thomas-style"), "appliquer", sid] + ([dispo] if dispo else [])
-        pid, *_ = GLib.spawn_async(args, flags=GLib.SpawnFlags.DO_NOT_REAP_CHILD)
-        GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, lambda *_: self.signaler(sid))
+    def style(self, *args):
+        """Lance « thomas-style ARGS » sans bloquer le service ; StyleChange part quand c'est fini."""
+        pid, *_ = GLib.spawn_async([os.environ.get("THOMAS_STYLE_BIN", "/usr/bin/thomas-style"), *args],
+                                   flags=GLib.SpawnFlags.DO_NOT_REAP_CHILD)
+        GLib.child_watch_add(GLib.PRIORITY_DEFAULT, pid, lambda *_: self.signaler())
 
-    def signaler(self, sid):
-        self.connexion.emit_signal(None, CHEMIN, "org.thomasos.Style1", "StyleChange", GLib.Variant("(s)", (sid,)))
+    def signaler(self):
+        self.rearmer()
+        self.connexion.emit_signal(None, CHEMIN, "org.thomasos.Style1", "StyleChange",
+                                   GLib.Variant("(s)", (STYLE.actuel_id(),)))
+
+    def liste_change(self):
+        self.connexion.emit_signal(None, CHEMIN, "org.thomasos.Style1", "ListeChange", None)
 
     def appel(self, conn, expediteur, chemin, interface, methode, params, invocation):
         self.rearmer()
@@ -152,17 +169,42 @@ class Service:
                 STYLE.charger(sid)  # refuse tout de suite un style inconnu ou mal écrit
                 if dispo and dispo not in STYLE.DISPOS:
                     raise STYLE.Erreur(f"disposition inconnue : {dispo}")
-                self.appliquer(sid, dispo)
+                self.style("appliquer", sid, *([dispo] if dispo else []))
                 rep = None
             elif methode == "Secours":
-                self.appliquer(STYLE.DEFAUT, "")
+                self.style("appliquer", STYLE.DEFAUT)
                 rep = None
+            elif methode == "Annuler":
+                if not STYLE.historique():
+                    raise STYLE.Erreur("Rien à annuler : aucun style précédent n'est gardé")
+                self.style("annuler")
+                rep = None
+            elif methode == "PeutAnnuler":
+                rep = GLib.Variant("(b)", (bool(STYLE.historique()),))
+            elif methode == "Catalogue":
+                rep = GLib.Variant("(s)", (json.dumps(STYLE.catalogue(), ensure_ascii=False),))
+            elif methode == "Lire":
+                rep = GLib.Variant("(s)", (json.dumps(STYLE.lire_style(params.unpack()[0]), ensure_ascii=False),))
+            elif methode == "Enregistrer":
+                sid, texte = params.unpack()
+                rep = GLib.Variant("(sas)", STYLE.enregistrer(sid, json.loads(texte)))
+                self.liste_change()
+            elif methode == "Importer":
+                rep = GLib.Variant("(sas)", STYLE.importer_fichier(params.unpack()[0]))
+                self.liste_change()
+            elif methode == "Exporter":
+                STYLE.exporter(*params.unpack())
+                rep = None
+            elif methode == "Supprimer":
+                STYLE.supprimer(params.unpack()[0])
+                rep = None
+                self.liste_change()
             elif methode == "Rapport":
                 rep = GLib.Variant("(s)", (rapport(),))
             else:
                 raise STYLE.Erreur(f"méthode inconnue : {methode}")
             invocation.return_value(rep)
-        except STYLE.Erreur as e:
+        except (STYLE.Erreur, ValueError, OSError) as e:  # ValueError : réglages JSON mal écrits
             invocation.return_dbus_error("org.thomasos.Core.Erreur", str(e))
 
     def lancer(self):
@@ -182,5 +224,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--test":  # sans D-Bus : affiche ce que le service répondrait
         print(json.dumps({"infos": infos(), "carte": carte_graphique()}, ensure_ascii=False, indent=1))
         print(rapport())
+        json.dumps(STYLE.catalogue())  # ce que reçoit Thomas Studio
+        print(f"Studio : {len(STYLE.lister())} styles, « {STYLE.DEFAUT} » = {STYLE.lire_style(STYLE.DEFAUT)['origine']}")
         sys.exit(0)
     Service().lancer()

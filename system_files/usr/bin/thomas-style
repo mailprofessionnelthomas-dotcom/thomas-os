@@ -12,6 +12,13 @@
   thomas-style autotest              vérifie tous les styles (pendant le build)
   thomas-style verifier-systeme      vérifie que tout ce que le Studio propose existe dans l'image
   thomas-style exporter-styles HTML  recopie les styles dans le Studio (studio/index.html)
+  thomas-style annuler               remet le style d'avant (les 5 derniers appliqués sont gardés)
+  thomas-style catalogue             tout ce que le Studio peut proposer (JSON)
+  thomas-style lire ID               les réglages d'un style (JSON, pour Thomas Studio)
+  thomas-style enregistrer ID FICHIER.json
+                                     écrit ton style à partir de réglages JSON (corrige au besoin)
+  thomas-style supprimer ID          retire ta version d'un style (gardée dans la corbeille)
+  thomas-style exporter ID FICHIER   copie le style complet dans un fichier .conf (pour le partager)
 
 Les styles du système sont dans /usr/share/thomas-os/styles/ ; ta version modifiée va dans
 ~/.config/thomas-os/styles/ et passe avant. Le style appliqué est recopié en entier dans
@@ -28,6 +35,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import zlib
 from datetime import date
 from pathlib import Path
@@ -120,6 +128,27 @@ CHOIX = [("barre", "disposition", DISPOS), ("texte", "police", POLICES), ("burea
          ("bureau", "icones", OUINON), ("fenetres", "ombre", OMBRES), ("systeme", "icones", ICONES),
          ("systeme", "curseur", CURSEURS), ("notifications", "position", POSITIONS),
          ("fenetres", "bordures", BORDURES_FEN)]
+# Noms affichés par Thomas Studio pour chaque choix (les autres listes ont déjà leurs noms : DISPOS, POLICES…)
+NOMS = {"barre.disposition": DISPOS, "texte.police": POLICES, "systeme.curseur": CURSEURS,
+        "systeme.icones": {**ICONES, "auto": "Automatique (selon les couleurs)"},
+        "effets.animations": {"rapides": "Rapides", "normales": "Normales", "aucune": "Aucune"},
+        "barre.bord": {"bas": "En bas", "haut": "En haut", "gauche": "À gauche", "droite": "À droite"},
+        "barre.longueur": {"pleine": "Toute la largeur", "ajustee": "Ajustée aux applis"},
+        "barre.alignement": {"centre": "Au centre", "gauche": "À gauche"},
+        "barre.masquage": {"non": "Toujours visible", "auto": "Se cache toute seule",
+                           "fenetres": "Se cache sous les fenêtres"},
+        "menu.type": {"kickoff": "Complet", "kicker": "Compact", "dash": "Plein écran"},
+        "menu.favoris": {"grille": "En grille", "liste": "En liste"},
+        "menu.cote": {"gauche": "Catégories à gauche", "droite": "Catégories à droite"},
+        "bureau.fond": {"degrade": "Dégradé", "uni": "Couleur unie", "image": "Image"},
+        "fenetres.ombre": {"aucune": "Aucune", "petite": "Petite", "moyenne": "Moyenne", "grande": "Grande",
+                           "enorme": "Très grande"},
+        "fenetres.bordures": {"aucune": "Aucune", "fine": "Fine", "normale": "Normale"},
+        "notifications.position": {"bas-droite": "En bas à droite", "bas-gauche": "En bas à gauche",
+                                   "haut-droite": "En haut à droite", "haut-gauche": "En haut à gauche",
+                                   "pres-horloge": "Près de l'horloge"}}
+BOUTONS_NOMS = {"M": "Menu de la fenêtre", "S": "Sur tous les bureaux", "F": "Toujours au-dessus", "H": "Aide",
+                "I": "Réduire", "A": "Agrandir", "X": "Fermer"}
 EFFET_COINS = "kwin4_effect_shapecorners"
 
 
@@ -139,6 +168,45 @@ def lire(chemin):
 
 def liste(v):
     return [x.strip() for x in v.split(",") if x.strip()]
+
+
+def identifiant(nom):
+    """« Mon Été 2026 » -> « mon-ete-2026 » : le nom de fichier du style."""
+    t = unicodedata.normalize("NFKD", str(nom)).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9_-]+", "-", t).strip("-")
+
+
+def brut(fichiers):
+    """Réglages tels qu'ils sont écrits (vide = automatique), sans les valeurs que verifier() remplit."""
+    b = {sec: dict(v) for sec, v in BASE.items()}
+    for f in fichiers:
+        if f.exists():
+            cp = lire(f)
+            for sec in cp.sections():
+                if sec in b:
+                    b[sec].update({k: v for k, v in cp[sec].items() if k in BASE[sec]})
+    return b
+
+
+def horodatage():
+    return f"{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 1000000:06d}"
+
+
+def mettre_de_cote(f):
+    """Un style remplacé ou supprimé n'est jamais effacé : il va dans ~/.config/thomas-os/corbeille (20 derniers)."""
+    if not f.exists():
+        return
+    corbeille = CFG / "corbeille"
+    corbeille.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(f), corbeille / f"{horodatage()}-{f.name}")
+    for vieux in sorted(corbeille.glob("*.conf"))[:-20]:
+        vieux.unlink()
+
+
+def historique():
+    """Copies des styles appliqués avant (pour « Annuler »), du plus ancien au plus récent."""
+    d = CFG / "historique"
+    return sorted(d.glob("*.conf")) if d.exists() else []
 
 
 def charger(sid, perso=True, fichiers=None):
@@ -527,8 +595,9 @@ def raccourcis_bureau(ids):
         f.chmod(0o755)
 
 
-def appliquer(sid, dispo=None, barre=True):
-    s = charger(sid)
+def appliquer(sid, dispo=None, barre=True, s=None, garder=True):
+    """garder : met le style d'avant dans l'historique (pour « Annuler »). s : style déjà chargé (annuler)."""
+    s = s or charger(sid)
     if dispo:
         if dispo not in DISPOS:
             raise Erreur(f"Disposition inconnue : {dispo} ({', '.join(DISPOS)})")
@@ -584,15 +653,35 @@ def appliquer(sid, dispo=None, barre=True):
         favoris_menu(liste(s["menu"]["epingles"]))  # avant le script : le menu y est recréé et les relit
     if barre and attendre_plasma():
         gdbus("org.kde.plasmashell", "/PlasmaShell", "org.kde.PlasmaShell.evaluateScript", js)
-    # mémoriser le style appliqué, en entier
+    # mémoriser le style appliqué, en entier (et garder celui d'avant : « Annuler » le remet)
     CFG.mkdir(parents=True, exist_ok=True)
     cp = configparser.ConfigParser(interpolation=None)
     cp.read_dict(s)
     cp["style"]["id"] = sid
-    with ACTUEL.open("w", encoding="utf-8") as fic:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=CFG, suffix=".tmp", delete=False) as fic:
         fic.write("# Style appliqué (copie complète). Pour le modifier : thomas-style code\n")
         cp.write(fic)
+    nouveau = Path(fic.name)
+    if garder and ACTUEL.exists() and ACTUEL.read_bytes() != nouveau.read_bytes():
+        (CFG / "historique").mkdir(exist_ok=True)
+        shutil.copyfile(ACTUEL, CFG / "historique" / f"{horodatage()}.conf")
+        for vieux in historique()[:-5]:
+            vieux.unlink()
+    nouveau.replace(ACTUEL)
     print(f"Style « {s['style']['nom']} » appliqué ({DISPOS[s['barre']['disposition']]}).")
+
+
+def annuler():
+    """Remet le style appliqué avant le dernier changement (barres, menu, couleurs : tout est reconstruit)."""
+    precedents = historique()
+    if not precedents:
+        raise Erreur("Rien à annuler : aucun style précédent n'est gardé")
+    cp = lire(precedents[-1])
+    s = brut([precedents[-1]])
+    sid = cp.get("style", "id", fallback=DEFAUT)
+    verifier(s, sid)
+    appliquer(sid, s=s, garder=False)
+    precedents[-1].unlink()
 
 
 def notifier(titre, texte):
@@ -681,7 +770,7 @@ def importer(chemin, repo=None):
     if j.get("format") != "thomas-os-studio":
         raise Erreur(f"{chemin} : ce n'est pas un design du Studio")
     corr = []
-    sid = re.sub(r"[^a-z0-9_-]+", "-", str(j.get("id") or j.get("nom") or "perso").lower()).strip("-") or "perso"
+    sid = identifiant(j.get("id") or j.get("nom") or "perso") or "perso"
     g = lambda sec, k, d=None: (j.get(sec) or {}).get(k, d)  # noqa: E731
 
     def num(sec, k, nom, defaut, lo, hi):
@@ -875,6 +964,8 @@ def importer(chemin, repo=None):
     dest_dir = racine / "system_files/usr/share/thomas-os/styles" if racine else USER_DIR
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{sid}.conf"
+    if not racine:
+        mettre_de_cote(dest)  # ton ancienne version n'est jamais perdue
     cp = configparser.ConfigParser(interpolation=None)
     cp.read_dict({sec: {k: str(v) for k, v in vals.items()} for sec, vals in s.items()})
     with dest.open("w", encoding="utf-8") as fic:
@@ -886,6 +977,170 @@ def importer(chemin, repo=None):
         cp.write(fic)
     charger(sid, perso=False, fichiers=[dest])
     return dest, corr
+
+
+# ---------- Thomas Studio (appli native) : lire, enregistrer, partager ----------
+def catalogue():
+    """Tout ce que le Studio peut proposer : les mêmes listes que celles vérifiées au build (verifier-systeme)."""
+    return {"format": 1, "choix": {f"{sec}.{k}": list(ok) for sec, k, ok in CHOIX}, "noms": NOMS,
+            "limites": {k: list(v) for k, v in LIMITES.items()},
+            "boutons": [[b, BOUTONS_NOMS[b]] for b in BOUTONS], "applis": APPS, "widgets": list(WIDGETS),
+            "tailles_icones": TAILLES_ICONES, "base": BASE}
+
+
+def lire_style(sid):
+    """Les réglages d'un style tels qu'écrits (vide = automatique) et son origine :
+    « systeme » (fourni par Thomas OS), « modifie » (ta version d'un style du système) ou « perso »."""
+    s = charger(sid)  # refuse un style inconnu ou cassé
+    sys_f, perso_f = SYS_DIR / f"{sid}.conf", USER_DIR / f"{sid}.conf"
+    b = brut([sys_f, perso_f])
+    b["style"]["nom"] = s["style"]["nom"]
+    origine = ("modifie" if sys_f.exists() else "perso") if perso_f.exists() else "systeme"
+    return {"id": sid, "origine": origine, "style": b}
+
+
+def enregistrer(nom_ou_id, donnees):
+    """Écrit ton style dans ~/.config/thomas-os/styles/ID.conf. Une valeur impossible est corrigée, pas refusée.
+    Pour un style du système, seules tes modifications sont écrites (les mises à jour de l'original suivent).
+    Renvoie (id, corrections)."""
+    sid = identifiant(nom_ou_id)
+    if not sid:
+        raise Erreur("Donne un nom au style")
+    if not isinstance(donnees, dict):
+        raise Erreur("Réglages mal formés (il faut des parties : couleurs, barre…)")
+    corr = []
+    s = {sec: dict(v) for sec, v in BASE.items()}
+    for sec, vals in donnees.items():
+        if sec not in BASE or not isinstance(vals, dict):
+            corr.append(f"partie « {sec} » inconnue, ignorée")
+            continue
+        for k, v in vals.items():
+            if k in BASE[sec]:
+                s[sec][k] = str(v).strip()
+            elif not (sec == "style" and k == "id"):
+                corr.append(f"réglage « {sec}.{k} » inconnu, ignoré")
+    s["style"]["nom"] = s["style"]["nom"] or str(nom_ou_id).strip() or sid
+    s["style"]["description"] = s["style"]["description"] or f"Créé avec Thomas Studio ({date.today():%d/%m/%Y})"
+    for k, v in s["couleurs"].items():  # vide permis seulement pour « automatique » (bordure)
+        if (v or BASE["couleurs"][k]) and not re.fullmatch(r"#[0-9a-fA-F]{6}", v):
+            corr.append(f"couleur {k} « {v} » → {BASE['couleurs'][k] or 'automatique'}")
+            v = BASE["couleurs"][k]
+        s["couleurs"][k] = v.lower()
+    for sec, vals in s.items():
+        for k, (lo, hi) in LIMITES.items():
+            if k not in vals or (vals[k] == "" and BASE[sec][k] == ""):
+                continue
+            try:
+                n = round(float(vals[k]))
+            except ValueError:
+                corr.append(f"« {k} » illisible → {BASE[sec][k] or lo}")
+                vals[k] = BASE[sec][k] or str(lo)
+                continue
+            if not lo <= n <= hi:
+                corr.append(f"« {k} » {n} → {min(max(n, lo), hi)} (de {lo} à {hi})")
+            vals[k] = str(min(max(n, lo), hi))
+    for sec, k, ok in CHOIX:
+        if s[sec][k] not in ok:
+            corr.append(f"« {k} » = « {s[sec][k]} » inconnu → {BASE[sec][k]}")
+            s[sec][k] = BASE[sec][k]
+    for sec, k, permis in (("barre", "epingles", APPS), ("menu", "epingles", APPS),
+                           ("bureau", "icones_liste", APPS + ["home", "trash"])):
+        garde = []
+        for a in liste(s[sec][k]):
+            if a in garde or a not in permis:
+                corr.append(f"{sec} : « {a} » {'en double' if a in garde else 'inconnue'}, retirée")
+            else:
+                garde.append(a)
+        s[sec][k] = ",".join(garde)
+    vus, cotes = set(), {}
+    for k in ("boutons_gauche", "boutons_droite"):
+        cotes[k] = ""
+        for ch in s["fenetres"][k]:
+            if ch not in BOUTONS or ch in vus:
+                corr.append(f"bouton de fenêtre « {ch} » {'en double' if ch in vus else 'inconnu'}, retiré")
+                continue
+            vus.add(ch)
+            cotes[k] += ch
+    if "X" not in vus:
+        cotes["boutons_droite"] += "X"
+        corr.append("bouton Fermer remis à droite (sinon impossible de fermer une fenêtre à la souris)")
+    s["fenetres"].update(cotes)
+    if not re.fullmatch(r"([A-Za-z]+\+)*[A-Za-z0-9]+", s["menu"]["raccourci"]):
+        corr.append(f"raccourci « {s['menu']['raccourci']} » invalide → {BASE['menu']['raccourci']}")
+        s["menu"]["raccourci"] = BASE["menu"]["raccourci"]
+    bu = s["bureau"]
+    if bu["fond"] == "image":  # l'image est recopiée : le style marche même si tu déplaces l'original
+        src = Path(bu["fond_image"]).expanduser() if bu["fond_image"] else None
+        fonds = DATA / "thomas-os/fonds"
+        if not src or not src.is_file():
+            corr.append(f"image de fond « {bu['fond_image'] or '?'} » introuvable → dégradé")
+            bu["fond"], bu["fond_image"] = "degrade", ""
+        elif not (str(src).startswith("/usr/") or src.parent == fonds):
+            fonds.mkdir(parents=True, exist_ok=True)
+            dest = fonds / f"{sid}{src.suffix.lower()}"
+            shutil.copyfile(src, dest)
+            bu["fond_image"] = str(dest)
+    try:
+        widgets(s)
+    except Erreur as e:
+        corr.append(f"{e} → widgets retirés")
+        bu["widgets"] = ""
+    sys_f = SYS_DIR / f"{sid}.conf"
+    ref = brut([sys_f]) if sys_f.exists() else None
+    ecrit = s if ref is None else {sec: {k: v for k, v in vals.items() if v != ref[sec][k] or k == "nom"}
+                                   for sec, vals in s.items()}
+    USER_DIR.mkdir(parents=True, exist_ok=True)
+    dest = USER_DIR / f"{sid}.conf"
+    tmp = USER_DIR / f".{sid}.tmp"
+    cp = configparser.ConfigParser(interpolation=None)
+    cp.read_dict({sec: vals for sec, vals in ecrit.items() if vals})
+    with tmp.open("w", encoding="utf-8") as fic:
+        fic.write(f"# Style « {s['style']['nom']} » enregistré avec Thomas Studio le {date.today():%d/%m/%Y}.\n")
+        if ref:
+            fic.write("# Seules tes modifications du style d'origine sont ici : supprime ce fichier pour revenir à l'original.\n")
+        fic.write("".join(f"# corrigé : {c}\n" for c in corr) + "\n")
+        cp.write(fic)
+    try:
+        charger(sid, fichiers=[sys_f, tmp])  # le moteur relit le résultat avant de remplacer quoi que ce soit
+    except Erreur:
+        tmp.unlink()
+        raise
+    mettre_de_cote(dest)
+    tmp.replace(dest)
+    return sid, corr
+
+
+def supprimer(sid):
+    """Retire ta version d'un style (gardée dans la corbeille). Un style du système revient à l'original."""
+    f = USER_DIR / f"{identifiant(sid)}.conf"
+    if not f.exists():
+        raise Erreur(f"« {sid} » n'a pas de version à toi : les styles du système ne se suppriment pas")
+    mettre_de_cote(f)
+
+
+def exporter(sid, chemin):
+    """Écrit le style complet dans un fichier .conf, pour le partager (même format que les autres styles)."""
+    s = lire_style(sid)["style"]
+    cp = configparser.ConfigParser(interpolation=None)
+    cp.read_dict(s)
+    with Path(chemin).open("w", encoding="utf-8") as fic:
+        fic.write(f"# Style « {s['style']['nom']} » de Thomas OS. Pour l'ajouter : Thomas Studio → Importer.\n\n")
+        cp.write(fic)
+
+
+def importer_fichier(chemin):
+    """Importe un style partagé (.conf) ou un design du Studio web (.json). Renvoie (id, corrections)."""
+    p = Path(chemin)
+    if p.suffix.lower() == ".json":
+        dest, corr = importer(p)
+        return dest.stem, corr
+    cp = lire(p)
+    if not any(sec in BASE for sec in cp.sections()):
+        raise Erreur(f"{p.name} : ce n'est pas un style Thomas OS")
+    sid = identifiant(p.stem) or "importe"
+    if (SYS_DIR / f"{sid}.conf").exists():  # un style importé ne remplace jamais un style du système
+        sid += "-importe"
+    return enregistrer(sid, {sec: dict(cp[sec]) for sec in cp.sections()})
 
 
 def exporter_styles(html):
@@ -941,6 +1196,7 @@ def verifier_systeme():
 
 
 def autotest():
+    global USER_DIR, CFG  # le test du Studio écrit dans un dossier jetable, jamais dans ton dossier perso
     erreurs = 0
     with tempfile.TemporaryDirectory() as tmp:
         for f in sorted(SYS_DIR.glob("*.conf")):
@@ -975,6 +1231,41 @@ def autotest():
         except (Erreur, AssertionError, OSError) as e:
             erreurs += 1
             print(f"ERREUR  importer     {e}")
+        # Thomas Studio : lire → modifier → enregistrer (corrigé, relu identique) → exporter → importer → supprimer
+        vieux, CFG = (USER_DIR, CFG), Path(tmp) / "cfg"
+        USER_DIR = CFG / "styles"
+        try:
+            st = lire_style(DEFAUT)["style"]
+            assert lire_style(DEFAUT)["origine"] == "systeme"
+            st["style"]["nom"] = "Essai Été"
+            st["couleurs"]["principale"] = "#00C8FF"
+            st["effets"]["coins"] = "99"
+            st["barre"]["disposition"] = "inconnue"
+            st["menu"]["raccourci"] = "Alt+"
+            st["fenetres"]["boutons_droite"] = "IA"
+            st["fantome"] = {"x": "1"}
+            sid, corr = enregistrer("Essai Été", st)
+            s2 = charger(sid)
+            assert sid == "essai-ete" and len(corr) >= 5, (sid, corr)
+            assert s2["couleurs"]["principale"] == "#00c8ff" and s2["effets"]["coins"] == "24", s2
+            assert "X" in s2["fenetres"]["boutons_droite"] and lire_style(sid)["origine"] == "perso"
+            exporter(sid, Path(tmp) / "partage.conf")
+            sid2, _ = importer_fichier(Path(tmp) / "partage.conf")
+            assert charger(sid2)["couleurs"] == s2["couleurs"], sid2
+            st = lire_style(DEFAUT)["style"]  # style du système modifié : seules les différences sont écrites
+            st["barre"]["epaisseur"] = "36"
+            enregistrer(DEFAUT, st)
+            assert lire_style(DEFAUT)["origine"] == "modifie" and charger(DEFAUT)["barre"]["epaisseur"] == "36"
+            assert "disposition" not in lire(USER_DIR / f"{DEFAUT}.conf")["barre"]
+            supprimer(DEFAUT)
+            assert lire_style(DEFAUT)["origine"] == "systeme" and len(list((CFG / "corbeille").glob("*.conf"))) == 1
+            assert json.loads(json.dumps(catalogue()))["choix"]["barre.disposition"][0] == "capsule"
+            print(f"OK      studio       enregistrer, relire, exporter, importer, supprimer ({len(corr)} corrections)")
+        except (Erreur, AssertionError, OSError, KeyError) as e:
+            erreurs += 1
+            print(f"ERREUR  studio       {e!r}")
+        finally:
+            USER_DIR, CFG = vieux
     if DEFAUT not in {f.stem for f in SYS_DIR.glob('*.conf')}:
         erreurs += 1
         print(f"ERREUR  style par défaut « {DEFAUT} » absent")
@@ -998,7 +1289,11 @@ def main(argv):
             notifier("Style de base remis", "Tes fichiers de style sont gardés")
         elif cmd == "importer" and args:
             repo = args[args.index("--repo") + 1] if "--repo" in args else None
-            dest, corr = importer(args[0], repo)
+            if args[0].lower().endswith(".conf"):
+                sid, corr = importer_fichier(args[0])
+                dest = USER_DIR / f"{sid}.conf"
+            else:
+                dest, corr = importer(args[0], repo)
             print(f"Style écrit : {dest}")
             print("Corrigé :" if corr else "Aucune correction.")
             for c in corr:
@@ -1011,6 +1306,24 @@ def main(argv):
             return verifier_systeme()
         elif cmd == "exporter-styles" and args:
             exporter_styles(args[0])
+        elif cmd == "annuler":
+            annuler()
+        elif cmd == "catalogue":
+            print(json.dumps(catalogue(), ensure_ascii=False, indent=1))
+        elif cmd == "lire" and args:
+            print(json.dumps(lire_style(args[0]), ensure_ascii=False, indent=1))
+        elif cmd == "enregistrer" and len(args) > 1:
+            try:
+                donnees = json.loads(Path(args[1]).read_text(encoding="utf-8"))
+            except (OSError, ValueError) as e:
+                raise Erreur(f"{args[1]} : fichier illisible ({e})") from e
+            # accepte aussi la sortie de « thomas-style lire » telle quelle
+            sid, corr = enregistrer(args[0], donnees["style"] if "origine" in donnees else donnees)
+            print(f"Style « {sid} » enregistré." + "".join(f"\n  - corrigé : {c}" for c in corr))
+        elif cmd == "supprimer" and args:
+            supprimer(args[0])
+        elif cmd == "exporter" and len(args) > 1:
+            exporter(args[0], args[1])
         else:
             print(__doc__)
         return 0

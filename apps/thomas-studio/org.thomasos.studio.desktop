@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Thomas Studio
+GenericName=Créateur de styles
+Comment=Crée et modifie les styles de Thomas OS : couleurs, barre, menu, fenêtres, fond
+Exec=thomas-studio
+Icon=thomas-os
+Categories=Settings;DesktopSettings;
+Keywords=style;thème;couleurs;personnaliser;barre;fond;studio;

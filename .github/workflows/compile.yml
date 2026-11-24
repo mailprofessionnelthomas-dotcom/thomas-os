@@ -1,12 +1,17 @@
 ---
 # Compilation rapide des applis Thomas OS (apps/), sans construire toute l'image :
 # même étape « compilation » que le Containerfile, donc mêmes versions de Qt et de KDE que le système.
+# Puis essai de Thomas Studio sans écran, avec un vrai Thomas Core : maquettes + photo de la fenêtre.
 name: Compiler les applis
 on:
   push:
     paths:
       - 'apps/**'
       - 'Containerfile'
+      - 'ci/essai-studio.sh'
+      - 'ci/planche.py'
+      - 'system_files/usr/bin/thomas-style'
+      - 'system_files/usr/libexec/thomas-core'
       - '.github/workflows/compile.yml'
   workflow_dispatch:
 
@@ -18,6 +23,9 @@ jobs:
     name: Compiler les applis
     runs-on: ubuntu-26.04
     timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash  # = bash -eo pipefail : un échec reste un échec, même derrière « tee »
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -29,3 +37,25 @@ jobs:
         run: |
           podman build --target compilation -t thomas-os-compilation -f Containerfile .
           podman run --rm thomas-os-compilation find /sortie -type f | sed 's/^/compilé : /'
+
+      - name: Essayer Thomas Studio (sans écran, avec Thomas Core)
+        run: |
+          mkdir -p essai
+          podman run --rm -v "$PWD:/depot:ro" -v "$PWD/essai:/essai" thomas-os-compilation \
+            bash /depot/ci/essai-studio.sh 2>&1 | tee essai/journal.txt
+          # une erreur QML (fichier.qml:ligne) fait échouer l'essai
+          if grep -E '\.qml:[0-9]+' essai/journal.txt; then echo "::error::erreurs QML dans Thomas Studio"; exit 1; fi
+
+      - name: Planche des maquettes
+        if: always()
+        run: |
+          sudo apt-get install -y -qq python3-pil >/dev/null
+          python3 ci/planche.py essai/planche.jpg essai/maquette-*.png essai/fenetre-studio.png || true
+
+      - name: Envoyer les maquettes
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: essai-studio
+          path: essai
+          retention-days: 14

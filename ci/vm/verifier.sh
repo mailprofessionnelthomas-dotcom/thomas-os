@@ -12,6 +12,13 @@ info() { echo "INFO    $*"; }
 en_root() { "$@"; }
 # nom de l'écran Wayland de la session de « testeur » (pas forcément wayland-0 : constaté en VM)
 ecran_wayland() { basename "$(ls /run/user/"$1"/wayland-[0-9]* 2>/dev/null | grep -v '\.lock$' | head -1)"; }
+# appel d'une méthode Style1 de Thomas Core dans la session de « testeur » (arguments au format GVariant : "'texte'")
+style_core() {
+    local u
+    u="$(id -u testeur)"
+    runuser -u testeur -- env DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" gdbus call --session \
+        --dest org.thomasos.Core --object-path /org/thomasos/Core --method "org.thomasos.Style1.$1" "${@:2}" 2>&1
+}
 
 case "${1:-}" in
 demarrage)
@@ -103,12 +110,89 @@ control)
     e="$(grep -iE 'qml|error|warning' /tmp/control.log | grep -v 'Qt Quick Layouts' | sort -u | tail -6)"
     if [[ -z "${e}" ]]; then ok "aucune erreur QML dans Thomas Control"; else ko "messages de Thomas Control :"; echo "${e}" | sed 's/^/INFO    /'; fi
     ;;
+studio)
+    # Thomas Studio : lire un style par Thomas Core, le modifier, l'enregistrer (avec correction),
+    # dessiner sa maquette, puis ouvrir le Studio dessus
+    u="$(id -u testeur)"
+    E=(XDG_RUNTIME_DIR="/run/user/${u}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" WAYLAND_DISPLAY="$(ecran_wayland "${u}")"
+       QT_QPA_PLATFORM=wayland XDG_CURRENT_DESKTOP=KDE KDE_FULL_SESSION=true QT_FORCE_STDERR_LOGGING=1)
+    if ! runuser -u testeur -- env "${E[@]}" python3 - <<'EOF'
+import json, sys
+from gi.repository import Gio, GLib
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+def appel(methode, signature=None, *args):
+    r = bus.call_sync("org.thomasos.Core", "/org/thomasos/Core", "org.thomasos.Style1", methode,
+                      GLib.Variant(signature, args) if signature else None, None, Gio.DBusCallFlags.NONE, 60000, None)
+    return r.unpack()
+bon = True
+def verif(condition, texte):
+    global bon
+    print(("OK      " if condition else "ECHEC   ") + texte)
+    bon = bon and condition
+cat = json.loads(appel("Catalogue")[0])
+verif("capsule" in cat["choix"]["barre.disposition"], "le Studio reçoit la liste de ce qui est possible (catalogue)")
+lu = json.loads(appel("Lire", "(s)", "thomas")[0])
+verif(lu["style"]["couleurs"]["principale"].lower() == "#ff0000", "le Studio lit le style Thomas OS")
+s = lu["style"]
+s["style"]["nom"] = "Essai VM"
+s["couleurs"].update(principale="#00b4ff", bordure="#00b4ff", fond_haut="#00264d", fond_bas="#00060f")
+s["bureau"]["fond"] = "degrade"
+s["barre"]["disposition"] = "windows"
+s["effets"]["coins"] = "99"
+sid, corr = appel("Enregistrer", "(ss)", "essai-vm", json.dumps(s))
+verif(sid == "essai-vm" and any("coins" in c for c in corr), f"style enregistré, valeur impossible corrigée ({'; '.join(corr)})")
+verif(any(i == "essai-vm" for i, _ in appel("Liste")[0]), "le nouveau style apparaît dans la liste")
+sys.exit(0 if bon else 1)
+EOF
+    then erreurs=$((erreurs + 1)); fi
+    rm -f /tmp/maquette-essai-vm.png
+    runuser -u testeur -- env "${E[@]}" timeout 60 thomas-studio --apercu /tmp/maquette-essai-vm.png essai-vm </dev/null >/tmp/maquette.log 2>&1
+    if [[ -s /tmp/maquette-essai-vm.png ]]; then ok "maquette du style dessinée par le Studio"; else
+        ko "pas de maquette :"; grep . /tmp/maquette.log | tail -8 | sed 's/^/INFO    /'
+    fi
+    runuser -u testeur -- env "${E[@]}" thomas-studio essai-vm </dev/null >/tmp/studio.log 2>&1 &
+    sleep 8
+    if pgrep -u testeur -x thomas-studio >/dev/null; then ok "Thomas Studio ouvert"; else
+        ko "Thomas Studio s'est fermé :"; grep . /tmp/studio.log | tail -12 | sed 's/^/INFO    /'
+    fi
+    e="$(cat /tmp/maquette.log /tmp/studio.log | grep -iE 'qml|error|warning' | grep -v 'Qt Quick Layouts' | sort -u | tail -8)"
+    if [[ -z "${e}" ]]; then ok "aucune erreur QML dans Thomas Studio"; else ko "messages de Thomas Studio :"; echo "${e}" | sed 's/^/INFO    /'; fi
+    ;;
+style-studio)
+    # le style créé avec le Studio, appliqué pour de vrai : la photo est comparée à la maquette
+    u="$(id -u testeur)"
+    maison="$(getent passwd testeur | cut -d: -f6)"
+    E=(XDG_RUNTIME_DIR="/run/user/${u}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" WAYLAND_DISPLAY="$(ecran_wayland "${u}")"
+       QT_QPA_PLATFORM=wayland XDG_CURRENT_DESKTOP=KDE KDE_FULL_SESSION=true)
+    pkill -u testeur -x thomas-studio; pkill -u testeur -x thomas-control; pkill -u testeur -x dolphin; sleep 1
+    style_core Appliquer "'essai-vm'" "''" >/dev/null
+    for _ in $(seq 60); do grep -q '^id = essai-vm$' "${maison}/.config/thomas-os/actuel.conf" && break; sleep 2; done
+    if grep -q '^id = essai-vm$' "${maison}/.config/thomas-os/actuel.conf"; then ok "style du Studio appliqué"; else ko "style du Studio pas appliqué"; fi
+    if grep -q 'ThomasOS-essai-vm' "${maison}/.config/kdeglobals"; then ok "couleurs du style en place"; else ko "couleurs du style absentes de kdeglobals"; fi
+    if [[ "$(style_core PeutAnnuler)" == *true* ]]; then ok "l'ancien style est gardé pour « Annuler »"; else ko "rien à annuler"; fi
+    sleep 6
+    runuser -u testeur -- env "${E[@]}" dolphin </dev/null >/dev/null 2>&1 &
+    sleep 8
+    runuser -u testeur -- env "${E[@]}" notify-send -a "Thomas OS" -i thomas-os "Notification de test" "Style créé avec le Studio"
+    ;;
+annuler)
+    # « Annuler le dernier changement » : le style d'avant (Thomas OS, barre capsule) revient
+    maison="$(getent passwd testeur | cut -d: -f6)"
+    pkill -u testeur -x dolphin
+    style_core Annuler >/dev/null
+    for _ in $(seq 60); do grep -q '^id = thomas$' "${maison}/.config/thomas-os/actuel.conf" && break; sleep 2; done
+    if grep -q '^id = thomas$' "${maison}/.config/thomas-os/actuel.conf"; then ok "« Annuler » remet le style d'avant"; else ko "« Annuler » n'a pas remis le style d'avant"; fi
+    applets="${maison}/.config/plasma-org.kde.plasma.desktop-appletsrc"
+    for _ in $(seq 20); do [[ "$(grep -c '^plugin=org.thomasos.barre$' "${applets}")" -ge 2 ]] && break; sleep 2; done
+    if [[ "$(grep -c '^plugin=org.thomasos.barre$' "${applets}")" -ge 2 ]]; then ok "la barre capsule est revenue"; else ko "la barre capsule n'est pas revenue"; fi
+    sleep 4
+    ;;
 applis)
     for _ in $(seq 72); do [[ -n "$(systemctl show -p ExecMainExitTimestamp --value thomas-flatpak-preinstall.service)" ]] && break; sleep 10; done
     info "service des applis : $(systemctl show -p Result --value thomas-flatpak-preinstall.service)"
     info "applis Flatpak installées : $(flatpak list --app --columns=application | tr '\n' ' ')"
     ;;
 *)
-    echo "usage : verifier.sh demarrage|preparer|session|situation|menu|core|control|applis"; exit 2 ;;
+    echo "usage : verifier.sh demarrage|preparer|session|situation|menu|core|control|studio|style-studio|annuler|applis"; exit 2 ;;
 esac
 exit $((erreurs > 0))

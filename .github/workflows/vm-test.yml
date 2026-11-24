@@ -117,6 +117,32 @@ jobs:
           sleep 2
           python3 ci/vm/photo.py /tmp/qemu-mon resultats/5-thomas-control.png
 
+      # Studio : un style modifié par Thomas Core, sa maquette, puis le même style appliqué pour de vrai
+      # (photo comparée à la maquette), et « Annuler » qui remet le style d'avant
+      - name: Thomas Studio
+        run: |
+          bash ci/vm/dans-la-vm.sh studio | tee -a resultats/rapport.txt
+          sleep 2
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/6-thomas-studio.png
+          ${SSH} cat /tmp/maquette-essai-vm.png > resultats/7-maquette-du-studio.png
+          bash ci/vm/dans-la-vm.sh style-studio | tee -a resultats/rapport.txt
+          sleep 2
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/8-style-du-studio-applique.png
+          bash ci/vm/dans-la-vm.sh annuler | tee -a resultats/rapport.txt
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/9-apres-annuler.png
+          python3 - <<'EOF'
+          # maquette à gauche, vrai bureau à droite (même hauteur)
+          from PIL import Image
+          a = Image.open("resultats/7-maquette-du-studio.png").convert("RGB")
+          b = Image.open("resultats/8-style-du-studio-applique.png").convert("RGB")
+          h = 400
+          a, b = (i.resize((round(i.width * h / i.height), h)) for i in (a, b))
+          c = Image.new("RGB", (a.width + b.width + 8, h), (255, 255, 255))
+          c.paste(a, (0, 0))
+          c.paste(b, (a.width + 8, 0))
+          c.save("resultats/comparaison-maquette-vrai.jpg", quality=85)
+          EOF
+
       - name: Installation automatique des applis (information)
         continue-on-error: true
         timeout-minutes: 15

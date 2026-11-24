@@ -283,6 +283,8 @@ test -f /usr/share/dbus-1/services/org.thomasos.Core.service
 HOME="$(mktemp -d)" /usr/libexec/thomas-core --test
 command -v thomas-control >/dev/null || { echo "ERREUR : Thomas Control absent"; exit 1; }
 test -f /usr/share/applications/org.thomasos.control.desktop
+command -v thomas-studio >/dev/null || { echo "ERREUR : Thomas Studio absent"; exit 1; }
+test -f /usr/share/applications/org.thomasos.studio.desktop
 test -f /etc/xdg/autostart/thomas-style.desktop
 case "${GPU_VARIANT}" in
     amd-intel) ;;

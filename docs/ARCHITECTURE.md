@@ -45,7 +45,7 @@
 | **Thomas Core** | Services communs : styles et thèmes, configuration, profils, diagnostics, canal de mises à jour, sauvegarde des réglages | `thomas-style` (moteur Python), `info.env`, canaux `testing`/`stable`, service Flatpak | Python 3 + PyGObject (Gio D-Bus, déjà dans l'image) |
 | **Thomas Desktop** | Ce qu'on voit : barre capsule, menu, fenêtres, notifications, panneau rapide, bureaux virtuels, widgets, raccourcis | Thème Plasma généré, barre par script, horloge QML | Thème Plasma + widgets QML (Plasma 6) + réglages KWin |
 | **Thomas Control** | Centre de contrôle : tableau de bord (CPU, GPU, RAM, disques), réglages groupés par catégories | — | Appli Qt 6 / QML / Kirigami, petit `main` en C++ |
-| **Thomas Studio** | Personnalisation avancée : thèmes, palettes, icônes, fonds, aperçu, sauvegarde et restauration | Prototype web `studio/index.html` + format de design JSON + `thomas-style importer` | Même pile que Control (version native plus tard) ; le prototype web reste l'outil de maquette |
+| **Thomas Studio** | Personnalisation avancée : thèmes, palettes, icônes, fonds, aperçu, sauvegarde et restauration | Appli native `apps/thomas-studio` (phase 6) + prototype web `studio/index.html` (placement des widgets) | Même pile que Control ; le prototype web reste l'outil de maquette pour les widgets |
 | **Thomas Welcome** | 1er démarrage : présentation, réseau, matériel (variante GPU), confidentialité, style, préférences | — | Même pile que Control |
 
 **Frontière Control / Studio :**
@@ -70,7 +70,7 @@
 
 | Interface | Méthodes (v1) | Signaux |
 |---|---|---|
-| `org.thomasos.Style1` | `Liste() → a(ss)`, `Actuel() → s`, `Appliquer(s id, s disposition)`, `Importer(s cheminJson) → as corrections`, `Secours()` | `StyleChange(s id)` |
+| `org.thomasos.Style1` | `Liste() → a(ss)`, `Actuel() → s`, `Appliquer(s id, s disposition)`, `Secours()`, `Annuler()`, `PeutAnnuler() → b` ; pour le Studio : `Catalogue() → s` (JSON), `Lire(s id) → s` (JSON), `Enregistrer(s id, s reglagesJson) → (s id, as corrections)`, `Importer(s chemin .conf/.json) → (s id, as corrections)`, `Exporter(s id, s chemin)`, `Supprimer(s id)` | `StyleChange(s id)`, `ListeChange()` |
 | `org.thomasos.Config1` | `Lire(s section, s cle) → s`, `Ecrire(s section, s cle, s valeur)`, `Sauvegarder() → s fichier`, `Restaurer(s fichier)` | `ConfigChange(s section, s cle)` |
 | `org.thomasos.Systeme1` (lecture seule) | `Infos() → a{ss}` (version, variante, canal, base), `CarteGraphique() → a{ss}` (détectée / attendue), `WindowsPresent() → b` | — |
 | `org.thomasos.Diagnostic1` | `Rapport() → s` (texte : services en échec, espace disque, températures) | `Alerte(s type, s message)` |
@@ -276,7 +276,7 @@ docs/                  ARCHITECTURE.md, guides
 | 3 | Identité : jetons, logo T, fond, module `org.thomasos.ui`, style par défaut refait | banc : photo du nouveau style |
 | 4 | Desktop : thème capsule, `org.thomasos.barre`, menu Alt+Espace, fenêtres, notifications, `org.thomasos.panneau` | banc + VM |
 | 5 | Core D-Bus + Thomas Control | VM : temps d'ouverture, pages |
-| 6 | Thomas Studio natif | banc : design → style identique |
+| 6 | Thomas Studio natif | VM : style modifié → enregistré → maquette ; appliqué → photo comparée ; annulé → style d'avant |
 | 7 | Thomas Welcome (+ masquer Bazzite Portal) | VM : 1re session |
 | 8 | Intégration : nettoyage, gaming, températures, diagnostic réseau | VM + mesures |
 | 9 | ISO live, installation, dual boot, Secure Boot (MOK), logo animé au démarrage | VM avec Secure Boot |
