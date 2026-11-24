@@ -99,7 +99,9 @@ Kirigami.ApplicationWindow {
                     }
                     QQC2.Label {
                         Layout.alignment: Qt.AlignHCenter
-                        text: "Version " + (fenetre.i.version ?? "?") + " · mises à jour : canal « " + (fenetre.i.canal ?? "?") + " »"
+                        // une installation sur un numéro de version précis (test) ne suit pas de canal
+                        text: "Version " + (fenetre.i.version ?? "?") + " · mises à jour : "
+                              + (/^\d{8}\.\d+$/.test(fenetre.i.canal ?? "") ? "version figée" : "canal « " + (fenetre.i.canal ?? "?") + " »")
                         color: Kirigami.Theme.disabledTextColor
                     }
                     Point { texte: "Le système se met à jour tout seul, en arrière-plan. La version d'avant reste disponible au démarrage du PC." }
@@ -140,7 +142,11 @@ Kirigami.ApplicationWindow {
                     id: etapeMateriel
                     readonly property var detectees: (fenetre.c.detectees ?? "").split(",").filter(x => fenetre.noms[x])
                     readonly property string image: (fenetre.c.conseil ?? "").split(" ")[0]
-                    readonly property string commande: "sudo bootc switch " + (fenetre.i.image_ref ?? "").replace(/[^/]*$/, image) + ":" + (fenetre.i.canal ?? "stable")
+                    // version inconnue (info.env absent) : on ne conseille rien plutôt qu'une commande fausse
+                    readonly property bool aChanger: fenetre.c.conforme === "non" && (fenetre.c.variante ?? "?") !== "?"
+                                                     && (fenetre.i.image_ref ?? "") !== ""
+                    readonly property string commande: "sudo bootc switch " + (fenetre.i.image_ref ?? "").replace(/[^/]*$/, image) + ":"
+                                                       + (["stable", "testing"].includes(fenetre.i.canal) ? fenetre.i.canal : "stable")
                     titre: "Carte graphique"
                     icone: "video-display"
                     texte: "Thomas OS existe en 3 versions selon la carte graphique (AMD/Intel, NVIDIA récente, NVIDIA ancienne). On vérifie que c'est la bonne."
@@ -162,14 +168,14 @@ Kirigami.ApplicationWindow {
                     }
                     Kirigami.InlineMessage {
                         Layout.fillWidth: true
-                        visible: fenetre.c.conforme === "non"
+                        visible: etapeMateriel.aChanger
                         type: Kirigami.MessageType.Warning
                         text: "Cette version (" + (fenetre.c.variante ?? "?") + ") n'est pas faite pour ta carte. Il te faut : " + (fenetre.c.conseil ?? "?")
                               + ". Pour changer : ouvre Konsole, tape la commande ci-dessous, puis redémarre. Bientôt, Thomas Control le fera en un clic."
                     }
                     QQC2.TextField {
                         Layout.fillWidth: true
-                        visible: fenetre.c.conforme === "non"
+                        visible: etapeMateriel.aChanger
                         readOnly: true
                         text: etapeMateriel.commande
                         font.family: "monospace"
