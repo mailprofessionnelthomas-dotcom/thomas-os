@@ -1,5 +1,5 @@
 // Maquette du bureau avec le style en cours d'édition : fond, horloge, barre(s), fenêtres, menu et notification.
-// Repère = la taille de ton écran (EL × EH, en pixels) mise à l'échelle : la barre, le menu et les fenêtres y ont
+// Repère = la taille de ton écran (ecranL × ecranH, en pixels) mise à l'échelle : la barre, le menu et les fenêtres y ont
 // leur vraie taille en pixels ; les widgets suivent la règle du moteur (placés sur 1920×1080 puis étirés à l'écran).
 // Elle suit les règles du moteur (thomas-style) : mêmes dispositions que son script Plasma, mêmes couleurs que le
 // schéma KDE qu'il génère.
@@ -13,10 +13,10 @@ Item {
     id: ap
     property bool menuOuvert: false
     property bool notification: false
-    property real EL: Screen.width > 0 ? Screen.width : 1920
-    property real EH: Screen.height > 0 ? Screen.height : 1080
-    readonly property real sx: EL / 1920
-    readonly property real sy: EH / 1080
+    property real ecranL: Screen.width > 0 ? Screen.width : 1920
+    property real ecranH: Screen.height > 0 ? Screen.height : 1080
+    readonly property real sx: ecranL / 1920
+    readonly property real sy: ecranH / 1080
     clip: true
 
     readonly property var s: Studio.brouillon
@@ -29,7 +29,7 @@ Item {
     function lum(c) { return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b }
     function px(x) { return x * k }
 
-    readonly property real k: width / EL
+    readonly property real k: width / ecranL
     // ----- couleurs -----
     readonly property color principale: v("couleurs", "principale", "#ff0000")
     readonly property color cBarre: v("couleurs", "barre", "#08080a")
@@ -56,16 +56,16 @@ Item {
 
     // ----- barres : mêmes dispositions que le script Plasma du moteur -----
     readonly property string dispo: v("barre", "disposition", "windows")
-    readonly property real H: n("barre", "epaisseur", 28)
+    readonly property real epBarre: n("barre", "epaisseur", 28)
     readonly property var g: {
-        if (dispo === "capsule") return { bord: "bas", flot: true, fit: true, haut: false, ep: H }
-        if (dispo === "windows") return { bord: "bas", flot: false, fit: false, haut: false, ep: H }
-        if (dispo === "float") return { bord: "bas", flot: true, fit: true, haut: false, ep: H }
-        if (dispo === "vertical") return { bord: "gauche", flot: false, fit: false, haut: false, ep: H + 6 }
-        if (dispo === "macos") return { bord: "bas", flot: true, fit: true, haut: true, ep: H + 12 }
+        if (dispo === "capsule") return { bord: "bas", flot: true, fit: true, haut: false, ep: epBarre }
+        if (dispo === "windows") return { bord: "bas", flot: false, fit: false, haut: false, ep: epBarre }
+        if (dispo === "float") return { bord: "bas", flot: true, fit: true, haut: false, ep: epBarre }
+        if (dispo === "vertical") return { bord: "gauche", flot: false, fit: false, haut: false, ep: epBarre + 6 }
+        if (dispo === "macos") return { bord: "bas", flot: true, fit: true, haut: true, ep: epBarre + 12 }
         const bord = v("barre", "bord", "bas")
         return { bord: bord, flot: oui("barre", "flottante"), fit: v("barre", "longueur", "pleine") === "ajustee",
-                 haut: oui("barre", "barre_haut") && bord !== "haut", ep: H }
+                 haut: oui("barre", "barre_haut") && bord !== "haut", ep: epBarre }
     }
     readonly property bool vertical: g.bord === "gauche" || g.bord === "droite"
     readonly property real marge: g.flot ? 8 : 0
@@ -119,7 +119,7 @@ Item {
         }
     }
     readonly property real longueur: {
-        const plein = vertical ? EH - hautFine - 2 * marge : EL - 2 * marge
+        const plein = vertical ? ecranH - hautFine - 2 * marge : ecranL - 2 * marge
         if (!g.fit) return plein
         let l = 8
         for (const e of elements) l += taille(e.t, g.ep, vertical)
@@ -127,16 +127,16 @@ Item {
     }
     readonly property rect rb: {  // barre principale (en pixels de l'écran)
         const ep = g.ep, L = longueur
-        if (g.bord === "bas") return Qt.rect((EL - L) / 2, EH - marge - ep, L, ep)
-        if (g.bord === "haut") return Qt.rect((EL - L) / 2, marge, L, ep)
-        return Qt.rect(g.bord === "gauche" ? marge : EL - marge - ep, hautFine + (EH - hautFine - L) / 2, ep, L)
+        if (g.bord === "bas") return Qt.rect((ecranL - L) / 2, ecranH - marge - ep, L, ep)
+        if (g.bord === "haut") return Qt.rect((ecranL - L) / 2, marge, L, ep)
+        return Qt.rect(g.bord === "gauche" ? marge : ecranL - marge - ep, hautFine + (ecranH - hautFine - L) / 2, ep, L)
     }
     readonly property rect zone: {  // place libre pour les fenêtres, le menu et les notifications
         const r = rb
-        if (g.bord === "bas") return Qt.rect(0, hautFine, EL, r.y - hautFine)
-        if (g.bord === "haut") return Qt.rect(0, r.y + r.height, EL, EH - r.y - r.height)
-        if (g.bord === "gauche") return Qt.rect(r.x + r.width, hautFine, EL - r.x - r.width, EH - hautFine)
-        return Qt.rect(0, hautFine, r.x, EH - hautFine)
+        if (g.bord === "bas") return Qt.rect(0, hautFine, ecranL, r.y - hautFine)
+        if (g.bord === "haut") return Qt.rect(0, r.y + r.height, ecranL, ecranH - r.y - r.height)
+        if (g.bord === "gauche") return Qt.rect(r.x + r.width, hautFine, ecranL - r.x - r.width, ecranH - hautFine)
+        return Qt.rect(0, hautFine, r.x, ecranH - hautFine)
     }
     // centre du bouton du menu le long de la barre : les espaces se partagent la place libre (comme dans Plasma)
     readonly property real centreMenu: {
@@ -153,14 +153,14 @@ Item {
     }
     readonly property string typeMenu: v("menu", "type", "kickoff")
     readonly property rect rm: {  // menu ouvert
-        if (typeMenu === "dash") return Qt.rect(0, 0, EL, EH)
+        if (typeMenu === "dash") return Qt.rect(0, 0, ecranL, ecranH)
         const w = typeMenu === "kickoff" ? n("menu", "largeur", 640) : 380
-        const h = Math.min(typeMenu === "kickoff" ? n("menu", "hauteur", 560) : 540, EH - g.ep - 24)
-        const m = 8, x = Math.min(Math.max(m, centreMenu - w / 2), EL - w - m)
+        const h = Math.min(typeMenu === "kickoff" ? n("menu", "hauteur", 560) : 540, ecranH - g.ep - 24)
+        const m = 8, x = Math.min(Math.max(m, centreMenu - w / 2), ecranL - w - m)
         if (dispo === "macos") return Qt.rect(m, 24 + m, w, h)
         if (g.bord === "bas") return Qt.rect(x, rb.y - h - m, w, h)
         if (g.bord === "haut") return Qt.rect(x, rb.y + rb.height + m, w, h)
-        const y = Math.min(Math.max(zone.y + m, centreMenu - h / 2), EH - h - m)
+        const y = Math.min(Math.max(zone.y + m, centreMenu - h / 2), ecranH - h - m)
         return Qt.rect(g.bord === "gauche" ? rb.x + rb.width + m : rb.x - w - m, y, w, h)
     }
     readonly property rect rn: {  // notification

@@ -12,8 +12,8 @@ Window {
     property bool menuOuvert: false
     readonly property var taille: /^(\d+)x(\d+)$/.exec(ecran)
 
-    width: apercu.EL
-    height: apercu.EH
+    width: apercu.ecranL
+    height: apercu.ecranH
     visible: true
     title: "Thomas Studio : maquette"
     color: "black"
@@ -23,8 +23,8 @@ Window {
         anchors.fill: parent
         notification: true
         menuOuvert: fen.menuOuvert
-        EL: fen.taille ? Number(fen.taille[1]) : (Screen.width > 0 ? Screen.width : 1920)
-        EH: fen.taille ? Number(fen.taille[2]) : (Screen.height > 0 ? Screen.height : 1080)
+        ecranL: fen.taille ? Number(fen.taille[1]) : (Screen.width > 0 ? Screen.width : 1920)
+        ecranH: fen.taille ? Number(fen.taille[2]) : (Screen.height > 0 ? Screen.height : 1080)
     }
     Component.onCompleted: Studio.ouvrir(styleDemande)
     Connections {

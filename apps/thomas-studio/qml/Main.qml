@@ -147,7 +147,7 @@ Kirigami.ApplicationWindow {
                 icon.name: "document-export"
                 enabled: !Studio.modifie && Studio.origine !== "nouveau"
                 onTriggered: {
-                    choixExport.currentFile = Studio.fichierExport()
+                    choixExport.selectedFile = Studio.fichierExport()
                     choixExport.open()
                 }
             },
@@ -399,7 +399,7 @@ Kirigami.ApplicationWindow {
                     Apercu {
                         id: apercu
                         Layout.fillWidth: true
-                        Layout.preferredHeight: width * apercu.EH / apercu.EL
+                        Layout.preferredHeight: width * apercu.ecranH / apercu.ecranL
                         menuOuvert: voirMenu.checked
                         notification: voirNotif.checked
                     }
