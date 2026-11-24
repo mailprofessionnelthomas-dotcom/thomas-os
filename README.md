@@ -57,7 +57,18 @@ Pas de doublon : une appli déjà fournie en paquet système n'est pas installé
 
 ## Studio de personnalisation
 
-Un éditeur visuel pour créer ses styles à la souris, sans rien installer : ouvre [`studio/index.html`](studio/index.html) dans ton navigateur (Opera GX, Chrome ou Edge enregistrent directement dans le dossier ; Firefox télécharge les fichiers).
+**Dans Thomas OS : l'appli Thomas Studio** (menu, ou Thomas Control → Apparence → « Créer un style »).
+- Choisis un style, règle couleurs, formes, barre, menu, fenêtres, fond et texte : la maquette à droite change tout de suite, à la taille de ton écran.
+- Boutons :
+  - **Enregistrer** : une valeur impossible est corrigée, et le bandeau te dit quoi ;
+  - **Appliquer** : montre le vrai résultat ;
+  - **Annuler le dernier changement** : remet le style d'avant ;
+  - **Nouveau**, **Importer** / **Exporter** (`.conf`) ;
+  - **Revenir à l'original**.
+- Rien n'est jamais effacé : une ancienne version va dans `~/.config/thomas-os/corbeille/`. Détails dans [`apps/thomas-studio/README.md`](apps/thomas-studio/README.md).
+- Vérifié en VM : maquette du Studio et vrai bureau côte à côte dans [`captures/vm/studio-maquette-vs-vrai.jpg`](captures/vm/studio-maquette-vs-vrai.jpg).
+
+**Pour placer les widgets du bureau à la souris (et préparer des styles sur Windows) :** ouvre [`studio/index.html`](studio/index.html) dans ton navigateur (Opera GX, Chrome ou Edge enregistrent directement dans le dossier ; Firefox télécharge les fichiers).
 
 - Barre des tâches (bord, flottante, épaisseur, transparence, flou, coins, applis épinglées), menu démarrer, fond d'écran, widgets, boutons et ombres des fenêtres, couleurs, police, icônes, curseur. Annuler/rétablir (Ctrl+Z / Ctrl+Y), grille, magnétisme.
 - Il ne propose que ce que KDE Plasma sait vraiment faire : le build vérifie que chaque widget, menu, pack d'icônes et curseur existe dans l'image.
