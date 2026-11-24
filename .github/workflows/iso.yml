@@ -43,7 +43,7 @@ jobs:
       - name: Faire de la place
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
-          tool-cache: true
+          preinstalled-runtimes: true
 
       # comme Bazzite : stockage des conteneurs sur un disque btrfs compressé (l'image + l'image à installer)
       - name: Stockage des conteneurs
@@ -90,10 +90,14 @@ jobs:
         uses: ublue-os/titanoboa@5c457c3d0518bd17e754be0fd98a60d29d26abb4
         with:
           image-ref: localhost/thomas-os-installateur:latest
-          iso-dest: ${{ github.workspace }}/sortie/${{ steps.refs.outputs.nom }}
+          iso-dest: ${{ steps.refs.outputs.nom }}  # un simple nom : titanoboa veut un dossier qui existe déjà
 
       - name: Taille et empreinte
+        env:
+          ISO: ${{ steps.iso.outputs.iso-dest }}
         run: |
+          mkdir -p sortie
+          mv "${ISO}" sortie/
           ls -lh sortie/
           (cd sortie && sha256sum ./*.iso | tee SHA256SUMS)
           df -h / /mnt
