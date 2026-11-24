@@ -28,6 +28,11 @@ on:
       - '.github/workflows/vm-test.yml'
       - 'iso/**'
       - '.github/workflows/iso.yml'
+      - 'ci/cle/**'
+      - 'ci/inspecter/**'
+      - 'ci/verifier-workflows.py'
+      - '.github/workflows/test-installation.yml'
+      - '.github/workflows/inspecter.yml'
   workflow_dispatch:
 
 env:

@@ -1,0 +1,49 @@
+---
+# Regarder dans l'image Thomas OS sans rien installer sur un PC : lance un script de ci/inspecter/ dans l'image
+# publiée (sur GitHub) et garde sa sortie dans le résumé du run et dans un artefact.
+name: Inspecter l'image
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: "Nom du script dans ci/inspecter/ (sans .sh)"
+        required: true
+      canal:
+        description: "Canal de l'image (testing ou stable)"
+        default: testing
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  inspecter:
+    name: Inspecter (${{ inputs.script }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Lancer le script dans l'image
+        env:
+          SCRIPT: ${{ inputs.script }}
+          CANAL: ${{ inputs.canal }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "${SCRIPT}" =~ ^[a-z0-9-]+$ && -f "ci/inspecter/${SCRIPT}.sh" ]] || { echo "::error::script inconnu : ${SCRIPT}"; exit 1; }
+          [[ "${CANAL}" =~ ^(testing|stable)$ ]] || { echo "::error::canal inconnu : ${CANAL}"; exit 1; }
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/thomas-os:${CANAL}"
+          echo "${GH_TOKEN}" | podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin >/dev/null
+          podman pull -q "${image}" >/dev/null
+          mkdir -p sortie
+          podman run --rm -v "${PWD}/ci/inspecter:/inspecter:ro,z" "${image}" bash "/inspecter/${SCRIPT}.sh" 2>&1 | tee sortie/resultat.txt
+          { echo '```'; head -c 60000 sortie/resultat.txt; echo '```'; } >>"${GITHUB_STEP_SUMMARY}"
+
+      - name: Garder le résultat
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: inspection
+          path: sortie
+          retention-days: 7
