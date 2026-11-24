@@ -29,8 +29,15 @@ class Serie:
         self.n = 0
 
     def lire(self):
+        if getattr(self, "ferme", False):
+            time.sleep(1)
+            return
         try:
-            d = self.s.recv(65536).decode("utf-8", "replace")
+            brut = self.s.recv(65536)
+            if not brut:  # la VM s'est éteinte : la console série est fermée
+                self.ferme = True
+                print("INFO    console série fermée (VM éteinte)", flush=True)
+            d = brut.decode("utf-8", "replace")
         except socket.timeout:
             d = ""
         self.tampon += d
@@ -40,7 +47,7 @@ class Serie:
 
     def chercher_depuis(self, motif, depuis, delai):
         fin = time.time() + delai
-        while time.time() < fin:
+        while time.time() < fin and not getattr(self, "ferme", False):
             self.lire()
             m = re.search(motif, self.tout[depuis:])
             if m:
@@ -130,10 +137,16 @@ def main():
     duree = (time.time() - debut) / 60
     if m and m.group(1).startswith("post fini"):
         print(f"OK      installation finie en {duree:.0f} min ; {m.group(1)}", flush=True)
+        fin = s.chercher_depuis(r"THOMAS-INSTALL: anaconda fini, code (\d+)", depuis, 10 * 60)
+        print(f"INFO    installateur terminé (code {fin.group(1) if fin else '?'})", flush=True)
         s.commande("cat /tmp/yad.log 2>/dev/null | sed 's/^/INFO    fenêtre : /'", 30)
+        s.commande("tail -n 15 /tmp/thomas-os-journaux/*.log", 60)
+        s.envoyer("poweroff\r")  # comme « Éteindre » après l'installation ; GitHub redémarre ensuite sur le disque
         return 0
-    print(f"ECHEC   installation : {m.group(1) if m else 'pas de fin au bout de 60 min'}", flush=True)
-    s.commande("tail -n 40 /tmp/install.log; tail -n 60 /tmp/anaconda.log; tail -n 30 /tmp/thomas-os-journaux/*.log", 120)
+    raison = m.group(1) if m else ("VM éteinte avant la fin" if getattr(s, "ferme", False) else "pas de fin au bout de 60 min")
+    print(f"ECHEC   installation : {raison}", flush=True)
+    if not getattr(s, "ferme", False):
+        s.commande("tail -n 40 /tmp/install.log; tail -n 80 /tmp/anaconda.log; tail -n 30 /tmp/thomas-os-journaux/*.log", 120)
     return 1
 
 

@@ -87,7 +87,6 @@ jobs:
           %post --nochroot
           echo "THOMAS-INSTALL: post fini, clé Secure Boot en attente : \$(mokutil --list-new 2>/dev/null | grep -c 'Subject:')" >/dev/ttyS0
           %end
-          poweroff
           EOF
           mkdir -p resultats
 
