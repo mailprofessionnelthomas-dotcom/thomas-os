@@ -71,13 +71,15 @@ Le bureau Thomas OS s'ouvre, puis l'installateur s'ouvre tout seul. Si tu le fer
 
 Enlève la clé USB et redémarre. Un **écran bleu « MOK management »** apparaît. Il faut le faire une seule fois :
 
-1. Choisis **Enroll MOK**, puis **Continue**, puis **Yes**.
+1. Avec la flèche ↓, choisis **Enroll MOK** (pas « Continue boot »), puis Entrée. Ensuite **Continue**, puis **Yes**.
 2. Tape le mot de passe **`secureboot`** puis Entrée.
    - Cet écran est en clavier QWERTY, mais ce mot se tape pareil en AZERTY.
    - Ce mot de passe n'a rien de secret : il prouve seulement que quelqu'un est devant le PC.
 3. Choisis **Reboot**.
 
-Si tu as raté l'écran bleu (il attend que tu appuies sur une touche), ce n'est pas grave : il revient au démarrage suivant.
+Si tu as choisi « Continue boot » par erreur, Thomas OS ne démarre pas : c'est normal, la clé n'est pas encore enregistrée. Ce n'est pas grave :
+- éteins puis rallume le PC : l'écran bleu revient ;
+- s'il ne revient pas, redémarre sur la clé USB, ouvre Konsole et tape `sudo mokutil --import /usr/share/thomas-os/secureboot.der`, avec le même mot de passe `secureboot` deux fois.
 
 Pourquoi cet écran ? Le noyau de Thomas OS (celui de Bazzite) est signé par Universal Blue. Cette étape l'ajoute aux clés de confiance, sans désactiver Secure Boot.
 

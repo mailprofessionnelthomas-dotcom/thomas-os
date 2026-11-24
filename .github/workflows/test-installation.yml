@@ -136,10 +136,10 @@ jobs:
             -monitor unix:${MON},server,nowait -pidfile qemu.pid -daemonize
           sleep 25
           python3 ci/vm/photo.py "${MON}" resultats/4-ecran-mok.png
-          # comme l'indique le guide : une touche, « Enroll MOK », « Continue », « Yes », mot de passe, « Reboot »
-          python3 ci/vm/touches.py "${MON}" ret; sleep 2
-          python3 ci/vm/photo.py "${MON}" resultats/5-mok-menu.png
+          # comme l'indique le guide (constaté : le menu s'affiche tout de suite, sans « appuie sur une touche ») :
+          # « Enroll MOK », « Continue », « Yes », mot de passe, « Reboot »
           python3 ci/vm/touches.py "${MON}" down ret; sleep 2
+          python3 ci/vm/photo.py "${MON}" resultats/5-mok-enroll.png
           python3 ci/vm/photo.py "${MON}" resultats/6-mok-cle.png
           python3 ci/vm/touches.py "${MON}" down ret; sleep 2
           python3 ci/vm/photo.py "${MON}" resultats/7-mok-confirmer.png
