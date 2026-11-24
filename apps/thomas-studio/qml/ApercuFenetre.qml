@@ -146,7 +146,24 @@ Item {
                         required property string modelData
                         width: f.theme.px(96)
                         spacing: f.theme.px(4)
-                        Kirigami.Icon { anchors.horizontalCenter: parent.horizontalCenter; width: f.theme.px(56); height: width; source: "folder" }
+                        Item {  // dossier dessiné : Breeze colore ses dossiers avec la couleur principale du style
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: f.theme.px(56)
+                            height: f.theme.px(46)
+                            Rectangle {
+                                width: parent.width * 0.42
+                                height: parent.height * 0.3
+                                radius: f.theme.px(3)
+                                color: Qt.darker(f.theme.principale, 1.3)
+                            }
+                            Rectangle {
+                                y: parent.height * 0.14
+                                width: parent.width
+                                height: parent.height * 0.86
+                                radius: f.theme.px(4)
+                                color: f.theme.principale
+                            }
+                        }
                         Text {
                             width: parent.width
                             horizontalAlignment: Text.AlignHCenter
