@@ -80,7 +80,6 @@ Kirigami.ApplicationWindow {
         function onErreur(message) { fenetre.showPassiveNotification(message) }
     }
 
-    // page d'accueil donnée comme composant : la pile de pages la crée elle-même, à sa place
-    Component { id: pageAccueil; PageAccueil {} }
-    pageStack.initialPage: pageAccueil
+    // page d'accueil déclarée ici (et non créée à partir d'un fichier) : elle n'est jamais orpheline
+    pageStack.initialPage: PageAccueil {}
 }
