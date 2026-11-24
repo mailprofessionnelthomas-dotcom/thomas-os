@@ -22,7 +22,7 @@ Kirigami.ApplicationWindow {
             ["kcm_mouse", "Souris", "Vitesse, boutons"], ["kcm_touchpad", "Pavé tactile", ""],
             ["kcm_keyboard", "Clavier", "Disposition, répétition"], ["kcm_gamecontroller", "Manettes", ""],
             ["kcm_printer_manager", "Imprimantes", ""]] },
-        { nom: "Réseau", icone: "network-wired", kcms: [
+        { nom: "Réseau", icone: "network-wired", page: "reseau", kcms: [
             ["kcm_networkmanagement", "Connexions", "Wi-Fi, filaire, VPN"], ["kcm_bluetooth", "Bluetooth", "Appareils"],
             ["kcm_proxy", "Proxy", ""]] },
         { nom: "Applications", icone: "applications-all", kcms: [
@@ -35,10 +35,10 @@ Kirigami.ApplicationWindow {
         { nom: "Stockage", icone: "drive-harddisk", kcms: [
             ["kcm_device_automounter", "Disques amovibles", "Montage automatique"], ["kcm_trash", "Corbeille", ""]],
           programmes: [["filelight", "Occupation du disque"], ["partitionmanager", "Partitions"]] },
-        { nom: "Performances", icone: "speedometer", programmes: [["plasma-systemmonitor", "Moniteur système (processus, CPU, RAM, GPU, réseau, disques)"]] },
-        { nom: "Gaming", icone: "input-gaming", bientot: "Mode jeu automatique : prévu (phase 8), mesuré avant/après." },
+        { nom: "Performances", icone: "speedometer", page: "performances" },
+        { nom: "Gaming", icone: "input-gaming", page: "gaming" },
         { nom: "Énergie", icone: "battery-full", kcms: [["kcm_powerdevilprofilesconfig", "Économie d'énergie", "Veille, écran"]] },
-        { nom: "Maintenance", icone: "tools", page: "systeme" },
+        { nom: "Maintenance", icone: "tools", page: "maintenance" },
         { nom: "Mises à jour", icone: "update-none", page: "systeme" }
     ]
 
@@ -67,8 +67,12 @@ Kirigami.ApplicationWindow {
     }
 
     function ouvrir(c) {
-        const pages = { accueil: "PageAccueil.qml", systeme: "PageSysteme.qml", apparence: "PageApparence.qml" }
-        if (c.page) {
+        const pages = { accueil: "PageAccueil.qml", systeme: "PageSysteme.qml", apparence: "PageApparence.qml",
+                        performances: "PagePerformances.qml", gaming: "PageGaming.qml", maintenance: "PageMaintenance.qml",
+                        reseau: "PageReseau.qml" }
+        if (c.page === "reseau") {
+            pageStack.replace(Qt.resolvedUrl(pages.reseau), { title: c.nom, categorie: c })
+        } else if (c.page) {
             pageStack.replace(Qt.resolvedUrl(pages[c.page]), { title: c.nom })
         } else {
             pageStack.replace(Qt.resolvedUrl("PageCategorie.qml"), { title: c.nom, categorie: c })
@@ -78,6 +82,34 @@ Kirigami.ApplicationWindow {
     Connections {
         target: Controle
         function onErreur(message) { fenetre.showPassiveNotification(message) }
+        function onMessage(message) { fenetre.showPassiveNotification(message) }
+    }
+
+    // tests : chaque catégorie ouverte puis photographiée (page-01.png…), puis quitter
+    property string dossierCapture
+    property int pageCapture: 0
+    Timer {
+        id: montrer
+        interval: 1000
+        running: fenetre.dossierCapture !== ""
+        onTriggered: {
+            fenetre.ouvrir(fenetre.categories[fenetre.pageCapture])
+            photographier.start()
+        }
+    }
+    Timer {
+        id: photographier
+        interval: 3000
+        onTriggered: {
+            const n = fenetre.pageCapture + 1
+            const ok = fenetre.pageStack.grabToImage(r => {
+                r.saveToFile(fenetre.dossierCapture + "/page-" + (n < 10 ? "0" : "") + n + ".png")
+                fenetre.pageCapture = n
+                if (n < fenetre.categories.length) montrer.start()
+                else Qt.exit(0)
+            })
+            if (!ok) Qt.exit(1)
+        }
     }
 
     // page d'accueil déclarée ici (et non créée à partir d'un fichier) : elle n'est jamais orpheline

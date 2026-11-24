@@ -12,6 +12,7 @@ on:
       - 'ci/planche.py'
       - 'system_files/usr/bin/thomas-style'
       - 'system_files/usr/libexec/thomas-core'
+      - 'system_files/usr/lib/thomas-os/**'
       - '.github/workflows/compile.yml'
   workflow_dispatch:
 
@@ -52,6 +53,7 @@ jobs:
           sudo apt-get install -y -qq python3-pil >/dev/null
           python3 ci/planche.py essai/planche.jpg essai/maquette-*.png essai/fenetre-studio.png || true
           python3 ci/planche.py essai/planche-bienvenue.jpg essai/bienvenue/etape-*.png || true
+          python3 ci/planche.py essai/planche-control.jpg essai/control/page-*.png || true
 
       - name: Envoyer les maquettes
         if: always()

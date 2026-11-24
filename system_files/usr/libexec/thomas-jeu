@@ -1,0 +1,12 @@
+#!/bin/bash
+# Mode jeu automatique (thomas-jeu.timer, toutes les 15 s, dans ta session). Si un jeu tourne : le profil d'énergie
+# « performance » est maintenu jusqu'à la fin du jeu (thomas-jeu-maintien.service), puis le profil d'avant revient.
+# Coupé dans Thomas Control → Gaming (« [jeu] auto = non » dans ~/.config/thomas-os/thomas.conf).
+# Ce n'est pas GameMode (retiré exprès par Bazzite) : seulement le profil d'énergie du système.
+conf="${XDG_CONFIG_HOME:-${HOME}/.config}/thomas-os/thomas.conf"
+if awk '/^\[/{s=$0} s=="[jeu]" && /^auto *= *non/{trouve=1} END{exit !trouve}' "${conf}" 2>/dev/null; then
+    exit 0
+fi
+motif="$(grep -Ev '^[[:space:]]*(#|$)' "${THOMAS_JEUX:-/usr/share/thomas-os/jeux.conf}" | paste -sd'|')"
+[[ -n "${motif}" ]] && pgrep -u "${UID}" -f -- "${motif}" >/dev/null || exit 0
+systemctl --user is-active --quiet thomas-jeu-maintien.service || systemctl --user start --no-block thomas-jeu-maintien.service

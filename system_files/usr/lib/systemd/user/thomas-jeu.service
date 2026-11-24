@@ -1,0 +1,9 @@
+[Unit]
+Description=Thomas OS : un jeu tourne-t-il ? (mode jeu automatique)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/thomas-jeu
+Nice=10
+# toutes les 15 s : pas de « démarré / fini » dans le journal à chaque passage
+LogLevelMax=notice

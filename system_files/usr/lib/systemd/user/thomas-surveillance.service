@@ -1,0 +1,8 @@
+[Unit]
+Description=Thomas OS : températures et espace disque (prévient seulement si besoin)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/thomas-surveillance
+Nice=10
+LogLevelMax=notice

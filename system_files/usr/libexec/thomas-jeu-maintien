@@ -1,0 +1,65 @@
+#!/usr/bin/python3
+"""Maintient le profil d'énergie « performance » tant qu'un jeu tourne (démarré par thomas-jeu).
+Quand le jeu s'arrête, ce programme s'arrête aussi : le service d'énergie (tuned-ppd ou power-profiles-daemon) remet
+tout seul le profil d'avant. Si « performance » n'existe pas sur ce PC, il ne fait rien.
+"""
+import os
+import subprocess
+import sys
+import time
+
+from gi.repository import Gio, GLib
+
+ENERGIE = [("org.freedesktop.UPower.PowerProfiles", "/org/freedesktop/UPower/PowerProfiles"),
+           ("net.hadess.PowerProfiles", "/net/hadess/PowerProfiles")]
+JEUX = os.environ.get("THOMAS_JEUX", "/usr/share/thomas-os/jeux.conf")
+
+
+def motif():
+    with open(JEUX, encoding="utf-8") as f:
+        return "|".join(l.strip() for l in f if l.strip() and not l.lstrip().startswith("#"))
+
+
+def jeu_en_cours(m):
+    return subprocess.run(["pgrep", "-u", str(os.getuid()), "-f", "--", m], capture_output=True).returncode == 0
+
+
+def attendre_fin(m):
+    """Reste là jusqu'à la fin du jeu (même sans rien maintenir : le minuteur ne relance pas ce programme en boucle)."""
+    while jeu_en_cours(m):
+        time.sleep(5)
+    return 0
+
+
+def main():
+    m = motif()
+    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
+    for nom, chemin in ENERGIE:
+        try:
+            prop = lambda p: bus.call_sync(nom, chemin, "org.freedesktop.DBus.Properties", "Get",  # noqa: E731
+                                           GLib.Variant("(ss)", (nom, p)), None, Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+            avant = prop("ActiveProfile")
+            if "performance" not in [p["Profile"] for p in prop("Profiles")]:
+                print("Mode jeu : le profil « performance » n'existe pas sur ce PC, rien à faire.")
+                return attendre_fin(m)
+            cle = bus.call_sync(nom, chemin, nom, "HoldProfile",
+                                GLib.Variant("(sss)", ("performance", "Jeu en cours", "org.thomasos.jeu")),
+                                GLib.VariantType("(u)"), Gio.DBusCallFlags.NONE, 5000, None).unpack()[0]
+        except GLib.Error as e:
+            print(f"Mode jeu : {nom} indisponible ({e.message})")
+            continue
+        print(f"Mode jeu : jeu détecté, profil « performance » (avant : « {avant} »)", flush=True)
+        attendre_fin(m)
+        try:
+            bus.call_sync(nom, chemin, nom, "ReleaseProfile", GLib.Variant("(u)", (cle,)), None,
+                          Gio.DBusCallFlags.NONE, 5000, None)
+        except GLib.Error:
+            pass  # de toute façon, le maintien s'arrête quand ce programme se termine
+        print("Mode jeu : jeu fini, profil d'avant remis")
+        return 0
+    print("Mode jeu : aucun service d'énergie (tuned-ppd / power-profiles-daemon)")
+    return attendre_fin(m)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

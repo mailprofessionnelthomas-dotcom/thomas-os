@@ -1,4 +1,6 @@
 // Thomas Control : point d'entrée. L'interface est en QML (dossier qml/), la logique dans Controle.
+//   thomas-control --capture DOSSIER   ouvre chaque catégorie, la photographie (page-01.png…), puis quitte (tests)
+#include <QCommandLineParser>
 #include <QGuiApplication>
 #include <QIcon>
 #include <QQmlApplicationEngine>
@@ -12,11 +14,18 @@ int main(int argc, char *argv[])
     app.setApplicationDisplayName(QStringLiteral("Thomas Control"));
     app.setDesktopFileName(QStringLiteral("org.thomasos.control"));
     app.setWindowIcon(QIcon::fromTheme(QStringLiteral("thomas-os")));
+    QCommandLineParser options;
+    options.addHelpOption();
+    const QCommandLineOption capture(QStringLiteral("capture"), QStringLiteral("Photo de chaque catégorie dans DOSSIER, puis quitte."),
+                                     QStringLiteral("DOSSIER"));
+    options.addOption(capture);
+    options.process(app);
     // Style des contrôles = celui de KDE : il suit les couleurs de Thomas OS (noir, anthracite, rouge)
     if (qEnvironmentVariableIsEmpty("QT_QUICK_CONTROLS_STYLE")) {
         QQuickStyle::setStyle(QStringLiteral("org.kde.desktop"));
     }
     QQmlApplicationEngine moteur;
+    moteur.setInitialProperties({{QStringLiteral("dossierCapture"), options.value(capture)}});
     moteur.loadFromModule(QStringLiteral("ThomasControl"), QStringLiteral("Main"));
     if (moteur.rootObjects().isEmpty()) {
         return 1;

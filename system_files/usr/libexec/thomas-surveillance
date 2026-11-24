@@ -1,0 +1,53 @@
+#!/usr/bin/python3
+"""Surveillance légère (thomas-surveillance.timer, toutes les 2 min, dans ta session) : une notification si un
+composant chauffe trop ou si le disque est presque plein. Une même alerte au plus toutes les 30 min (disque : une
+fois par jour). Rien ne tourne en permanence : chaque passage dure quelques millisecondes.
+
+THOMAS_HWMON (faux capteurs) et XDG_STATE_HOME servent aux tests.
+"""
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, os.environ.get("THOMAS_PYTHON", "/usr/lib/thomas-os/python"))
+from thomas_os import capteurs  # noqa: E402
+
+ETAT = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "thomas-os/alertes.json"
+DELAIS = {"chaleur": 1800, "disque": 86400}
+DISQUE_MINI = 10 * 2**30  # 10 Go libres
+
+
+def main():
+    try:
+        etat = json.loads(ETAT.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        etat = {}
+    alertes = []
+    for nom, v, limite in capteurs.temperatures():
+        if v >= capteurs.seuil(limite):
+            alertes.append(("chaleur", f"{nom} chauffe : {v:.0f} °C",
+                            "Vérifie que l'air circule (ventilateurs, poussière). Thomas Control → Performances montre les températures."))
+    for point, _total, libre in capteurs.disques():
+        if libre < DISQUE_MINI:
+            alertes.append(("disque", f"Disque presque plein : {libre / 2**30:.1f} Go libres",
+                            "Thomas Control → Maintenance peut faire de la place."))
+    maintenant = time.time()
+    for genre, titre, texte in alertes:
+        if maintenant - etat.get(genre, 0) < DELAIS[genre]:
+            continue
+        try:
+            subprocess.run(["notify-send", "-a", "Thomas OS", "-i", "dialog-warning", "-u", "critical", titre, texte],
+                           capture_output=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            pass  # pas de session graphique (build, tests) : l'alerte est quand même écrite dans le journal
+        etat[genre] = maintenant
+        print(f"alerte : {titre}")
+        ETAT.parent.mkdir(parents=True, exist_ok=True)
+        ETAT.write_text(json.dumps(etat), encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

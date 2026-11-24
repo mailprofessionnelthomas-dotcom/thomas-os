@@ -1,0 +1,8 @@
+[Unit]
+Description=Thomas OS : nettoyage (composants Flatpak inutilisés ; jamais tes fichiers ni la version d'avant)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/thomas-nettoyage
+Nice=19
+IOSchedulingClass=idle

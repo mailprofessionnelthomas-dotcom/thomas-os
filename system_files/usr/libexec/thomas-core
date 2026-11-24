@@ -12,12 +12,18 @@ import importlib.util
 import json
 import os
 import re
-import shutil
+import socket
+import statistics
 import subprocess
 import sys
+import time
+import urllib.request
 from pathlib import Path
 
 from gi.repository import Gio, GLib
+
+sys.path.insert(0, os.environ.get("THOMAS_PYTHON", "/usr/lib/thomas-os/python"))
+from thomas_os import capteurs  # noqa: E402
 
 NOM, CHEMIN = "org.thomasos.Core", "/org/thomasos/Core"
 INACTIF_S = int(os.environ.get("THOMAS_CORE_INACTIF", "60"))
@@ -40,6 +46,8 @@ XML = """<node>
     <method name="Infos"><arg type="a{ss}" direction="out"/></method>
     <method name="CarteGraphique"><arg type="a{ss}" direction="out"/></method>
     <method name="Reseau"><arg type="a{ss}" direction="out"/></method>
+    <method name="Energie"><arg type="a{ss}" direction="out"/></method>
+    <method name="ChoisirEnergie"><arg name="profil" type="s" direction="in"/></method>
   </interface>
   <interface name="org.thomasos.Config1">
     <method name="Lire"><arg name="section" type="s" direction="in"/><arg name="cle" type="s" direction="in"/>
@@ -68,6 +76,10 @@ XML = """<node>
   </interface>
   <interface name="org.thomasos.Diagnostic1">
     <method name="Rapport"><arg type="s" direction="out"/></method>
+    <method name="Temperatures"><arg type="a(sdd)" direction="out"/></method>
+    <method name="TestReseau"><arg type="a{ss}" direction="out"/></method>
+    <method name="TestDebit"><arg type="a{ss}" direction="out"/></method>
+    <method name="Nettoyage"><arg type="a{ss}" direction="out"/></method>
   </interface>
 </node>"""
 
@@ -131,6 +143,109 @@ def reseau():
     return {"etat": "deconnecte", "type": "", "nom": ""}
 
 
+# ---------- énergie (tuned-ppd ou power-profiles-daemon : même interface D-Bus) ----------
+ENERGIE = [("org.freedesktop.UPower.PowerProfiles", "/org/freedesktop/UPower/PowerProfiles"),
+           ("net.hadess.PowerProfiles", "/net/hadess/PowerProfiles")]
+
+
+def _energie_prop(bus, nom, chemin, prop):
+    r = bus.call_sync(nom, chemin, "org.freedesktop.DBus.Properties", "Get", GLib.Variant("(ss)", (nom, prop)),
+                      None, Gio.DBusCallFlags.NONE, 3000, None)
+    return r.unpack()[0]
+
+
+def energie():
+    """Profil d'énergie actuel, profils possibles, et si le mode jeu le maintient en ce moment."""
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
+    except GLib.Error:
+        return {"profil": "", "profils": "", "jeu": "non", "service": ""}
+    for nom, chemin in ENERGIE:
+        try:
+            actif = _energie_prop(bus, nom, chemin, "ActiveProfile")
+            profils = [p["Profile"] for p in _energie_prop(bus, nom, chemin, "Profiles")]
+            maintiens = _energie_prop(bus, nom, chemin, "ActiveProfileHolds")
+        except GLib.Error:
+            continue
+        jeu = any(m.get("ApplicationId") == "org.thomasos.jeu" for m in maintiens)
+        return {"profil": actif, "profils": ",".join(profils), "jeu": "oui" if jeu else "non", "service": nom}
+    return {"profil": "", "profils": "", "jeu": "non", "service": ""}
+
+
+def choisir_energie(profil):
+    if profil not in ("power-saver", "balanced", "performance"):
+        raise STYLE.Erreur(f"profil d'énergie inconnu : {profil}")
+    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
+    dernier = "service d'énergie absent"
+    for nom, chemin in ENERGIE:
+        try:
+            bus.call_sync(nom, chemin, "org.freedesktop.DBus.Properties", "Set",
+                          GLib.Variant("(ssv)", (nom, "ActiveProfile", GLib.Variant("s", profil))), None,
+                          Gio.DBusCallFlags.ALLOW_INTERACTIVE_AUTHORIZATION, 30000, None)
+            return
+        except GLib.Error as e:
+            dernier = e.message
+    raise STYLE.Erreur(f"profil d'énergie non changé : {dernier}")
+
+
+# ---------- diagnostic réseau : mesurer, ne rien régler (vision : aucun réglage réseau « universel ») ----------
+def test_reseau():
+    """Latence (8 connexions TCP vers 1.1.1.1:443 : marche même là où le ping est bloqué), DNS, signal Wi-Fi."""
+    r = dict(reseau())
+    temps, echecs = [], 0
+    for _ in range(8):
+        t0 = time.perf_counter()
+        try:
+            with socket.create_connection(("1.1.1.1", 443), timeout=2):
+                temps.append((time.perf_counter() - t0) * 1000)
+        except OSError:
+            echecs += 1
+        time.sleep(0.1)
+    if temps:
+        r.update(latence_ms=f"{statistics.median(temps):.0f}", latence_min=f"{min(temps):.0f}",
+                 latence_max=f"{max(temps):.0f}", gigue_ms=f"{statistics.pstdev(temps):.0f}")
+    r["pertes"] = f"{echecs}/8"
+    t0 = time.perf_counter()
+    try:
+        socket.getaddrinfo("github.com", 443)
+        r["dns_ms"] = f"{(time.perf_counter() - t0) * 1000:.0f}"
+    except OSError:
+        r["dns_ms"] = "échec"
+    if r.get("type") == "wifi":
+        for ligne in commande("nmcli", "-t", "-f", "IN-USE,SIGNAL", "device", "wifi").splitlines():
+            if ligne.startswith("*:"):
+                r["signal"] = ligne.split(":")[1]
+    return r
+
+
+def test_debit():
+    """Débit descendant : télécharge 25 Mo (arrêt au bout de 15 s) depuis le serveur de test de Cloudflare."""
+    url = "https://speed.cloudflare.com/__down?bytes=25000000"
+    t0, n = time.perf_counter(), 0
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "ThomasOS-diagnostic"}),
+                                    timeout=20) as rep:
+            while time.perf_counter() - t0 < 15:
+                bloc = rep.read(1 << 16)
+                if not bloc:
+                    break
+                n += len(bloc)
+    except OSError as e:
+        raise STYLE.Erreur(f"débit non mesuré : {e}") from e
+    dt = max(time.perf_counter() - t0, 0.001)
+    return {"debit_mbps": f"{n * 8 / dt / 1e6:.0f}", "mo": f"{n / 1e6:.0f}", "secondes": f"{dt:.1f}",
+            "source": "speed.cloudflare.com"}
+
+
+def nettoyage():
+    """Dernier nettoyage automatique (écrit par thomas-nettoyage, en root)."""
+    try:
+        d = json.loads(Path("/var/lib/thomas-os/nettoyage.json").read_text(encoding="utf-8"))
+        return {"date": str(d.get("date", "")), "libere_mo": str(d.get("libere_mo", ""))}
+    except (OSError, ValueError):
+        return {"date": "", "libere_mo": ""}
+
+
 CONFIG = STYLE.CFG / "thomas.conf"  # préférences générales (docs/ARCHITECTURE.md §4.2)
 NOM_CONFIG = re.compile(r"[a-z][a-z0-9_]{0,39}")
 
@@ -163,17 +278,10 @@ def rapport():
                      ("session", ["systemctl", "--user", "--failed", "--no-legend", "--plain"])):
         echecs = [l.split()[0] for l in commande(*cmd).splitlines() if l.strip()]
         lignes.append(f"Services en échec ({nom}) : {', '.join(echecs) if echecs else 'aucun'}")
-    for point in ("/", "/var/home"):
-        if os.path.exists(point):
-            u = shutil.disk_usage(point)
-            lignes.append(f"Disque {point} : {u.used * 100 // max(u.total, 1)} % utilisé, {u.free // 2**30} Go libres")
-    temps = []
-    for t in Path("/sys/class/hwmon").glob("hwmon*/temp*_input"):
-        try:
-            temps.append(int(t.read_text()) / 1000)
-        except (OSError, ValueError):
-            pass
-    lignes.append(f"Température la plus haute : {max(temps):.0f} °C" if temps else "Températures : capteurs non disponibles")
+    for point, total, libre in capteurs.disques():
+        lignes.append(f"Disque {point} : {(total - libre) * 100 // max(total, 1)} % utilisé, {libre // 2**30} Go libres")
+    temps = capteurs.temperatures()
+    lignes += [f"Température {nom} : {v:.0f} °C" for nom, v, _ in temps] or ["Températures : capteurs non disponibles"]
     return "\n".join(lignes)
 
 
@@ -218,6 +326,19 @@ class Service:
                     raise STYLE.Erreur(f"méthode inconnue : {methode}")
             elif methode == "Reseau":
                 rep = GLib.Variant("(a{ss})", (reseau(),))
+            elif methode == "Energie":
+                rep = GLib.Variant("(a{ss})", (energie(),))
+            elif methode == "ChoisirEnergie":
+                choisir_energie(params.unpack()[0])
+                rep = None
+            elif methode == "Temperatures":
+                rep = GLib.Variant("(a(sdd))", ([(n, float(v), float(l)) for n, v, l in capteurs.temperatures()],))
+            elif methode == "TestReseau":
+                rep = GLib.Variant("(a{ss})", (test_reseau(),))
+            elif methode == "TestDebit":
+                rep = GLib.Variant("(a{ss})", (test_debit(),))
+            elif methode == "Nettoyage":
+                rep = GLib.Variant("(a{ss})", (nettoyage(),))
             elif methode == "Infos":
                 rep = GLib.Variant("(a{ss})", (infos(),))
             elif methode == "CarteGraphique":
@@ -268,6 +389,8 @@ class Service:
             invocation.return_value(rep)
         except (STYLE.Erreur, ValueError, OSError) as e:  # ValueError : réglages JSON mal écrits
             invocation.return_dbus_error("org.thomasos.Core.Erreur", str(e))
+        except GLib.Error as e:  # un autre service (énergie…) n'a pas répondu
+            invocation.return_dbus_error("org.thomasos.Core.Erreur", e.message)
 
     def lancer(self):
         noeud = Gio.DBusNodeInfo.new_for_xml(XML)
@@ -284,7 +407,8 @@ class Service:
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--test":  # sans D-Bus : affiche ce que le service répondrait
-        print(json.dumps({"infos": infos(), "carte": carte_graphique(), "reseau": reseau()}, ensure_ascii=False, indent=1))
+        print(json.dumps({"infos": infos(), "carte": carte_graphique(), "reseau": reseau(), "nettoyage": nettoyage(),
+                          "temperatures": capteurs.temperatures()}, ensure_ascii=False, indent=1))
         config_ecrire("essai", "cle", "valeur")  # HOME jetable pendant le build
         assert config_lire("essai", "cle") == "valeur"
         print(rapport())

@@ -1,0 +1,10 @@
+[Unit]
+Description=Thomas OS : surveillance des températures et du disque, toutes les 2 min
+
+[Timer]
+OnStartupSec=2min
+OnUnitActiveSec=2min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

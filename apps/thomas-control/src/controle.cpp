@@ -40,20 +40,137 @@ Controle::Controle(QObject *parent)
 }
 
 void Controle::appelerCore(const QString &interface, const QString &methode, const QVariantList &args,
-                           const std::function<void(const QList<QVariant> &)> &suite)
+                           const std::function<void(const QList<QVariant> &)> &suite, int delaiMs, const std::function<void()> &siErreur)
 {
     auto msg = QDBusMessage::createMethodCall(SERVICE, CHEMIN, interface, methode);
     msg.setArguments(args);
-    auto *veilleur = new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(msg, 30000), this);
-    connect(veilleur, &QDBusPendingCallWatcher::finished, this, [this, suite](QDBusPendingCallWatcher *w) {
+    auto *veilleur = new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(msg, delaiMs), this);
+    connect(veilleur, &QDBusPendingCallWatcher::finished, this, [this, suite, siErreur](QDBusPendingCallWatcher *w) {
         const QDBusMessage rep = w->reply();
         w->deleteLater();
         if (rep.type() == QDBusMessage::ErrorMessage) {
             Q_EMIT erreur(rep.errorMessage());
+            if (siErreur) {
+                siErreur();
+            }
             return;
         }
         suite(rep.arguments());
     });
+}
+
+void Controle::actualiserTemperatures()
+{
+    appelerCore(QStringLiteral("org.thomasos.Diagnostic1"), QStringLiteral("Temperatures"), {}, [this](const QList<QVariant> &r) {
+        m_temperatures.clear();
+        if (!r.isEmpty() && r.first().canConvert<QDBusArgument>()) {
+            const QDBusArgument arg = r.first().value<QDBusArgument>();
+            arg.beginArray();
+            while (!arg.atEnd()) {
+                QString nom;
+                double valeur = 0, limite = 0;
+                arg.beginStructure();
+                arg >> nom >> valeur >> limite;
+                arg.endStructure();
+                m_temperatures.append(QVariantMap{{QStringLiteral("nom"), nom}, {QStringLiteral("valeur"), valeur},
+                                                  {QStringLiteral("limite"), limite},
+                                                  {QStringLiteral("seuil"), limite > 0 ? limite - 5 : 95.0}});
+            }
+            arg.endArray();
+        }
+        Q_EMIT temperaturesChanged();
+    });
+}
+
+void Controle::actualiserEnergie()
+{
+    appelerCore(QStringLiteral("org.thomasos.Systeme1"), QStringLiteral("Energie"), {}, [this](const QList<QVariant> &r) {
+        m_energie = r.isEmpty() ? QVariantMap() : dicoTexte(r.first());
+        Q_EMIT energieChanged();
+    });
+    appelerCore(QStringLiteral("org.thomasos.Config1"), QStringLiteral("Lire"), {QStringLiteral("jeu"), QStringLiteral("auto")},
+                [this](const QList<QVariant> &r) {
+                    m_jeuAuto = r.value(0).toString() != QStringLiteral("non");
+                    Q_EMIT energieChanged();
+                });
+}
+
+void Controle::choisirEnergie(const QString &profil)
+{
+    appelerCore(QStringLiteral("org.thomasos.Systeme1"), QStringLiteral("ChoisirEnergie"), {profil},
+                [this](const QList<QVariant> &) { actualiserEnergie(); }, 60000);
+}
+
+void Controle::changerJeuAuto(bool actif)
+{
+    appelerCore(QStringLiteral("org.thomasos.Config1"), QStringLiteral("Ecrire"),
+                {QStringLiteral("jeu"), QStringLiteral("auto"), actif ? QStringLiteral("oui") : QStringLiteral("non")},
+                [this](const QList<QVariant> &) { actualiserEnergie(); });
+}
+
+void Controle::lancerTestReseau()
+{
+    ++m_mesures;
+    Q_EMIT reseauChanged();
+    appelerCore(
+        QStringLiteral("org.thomasos.Diagnostic1"), QStringLiteral("TestReseau"), {},
+        [this](const QList<QVariant> &r) {
+            const QVariantMap debit = {{QStringLiteral("debit_mbps"), m_testReseau.value(QStringLiteral("debit_mbps"))}};
+            m_testReseau = r.isEmpty() ? QVariantMap() : dicoTexte(r.first());
+            if (debit.value(QStringLiteral("debit_mbps")).isValid()) {
+                m_testReseau.insert(debit);
+            }
+            --m_mesures;
+            Q_EMIT reseauChanged();
+        },
+        60000, [this] {
+            --m_mesures;
+            Q_EMIT reseauChanged();
+        });
+}
+
+void Controle::lancerTestDebit()
+{
+    ++m_mesures;
+    Q_EMIT reseauChanged();
+    appelerCore(
+        QStringLiteral("org.thomasos.Diagnostic1"), QStringLiteral("TestDebit"), {},
+        [this](const QList<QVariant> &r) {
+            m_testReseau.insert(r.isEmpty() ? QVariantMap() : dicoTexte(r.first()));
+            --m_mesures;
+            Q_EMIT reseauChanged();
+        },
+        90000, [this] {
+            --m_mesures;
+            Q_EMIT reseauChanged();
+        });
+}
+
+void Controle::actualiserNettoyage()
+{
+    appelerCore(QStringLiteral("org.thomasos.Diagnostic1"), QStringLiteral("Nettoyage"), {}, [this](const QList<QVariant> &r) {
+        m_nettoyage = r.isEmpty() ? QVariantMap() : dicoTexte(r.first());
+        Q_EMIT nettoyageChanged();
+    });
+}
+
+void Controle::nettoyer()
+{
+    // service système (root) : systemd demande le mot de passe administrateur par la fenêtre de KDE (polkit)
+    auto *p = new QProcess(this);
+    m_nettoyageEnCours = true;
+    Q_EMIT nettoyageChanged();
+    connect(p, &QProcess::finished, this, [this, p](int code) {
+        p->deleteLater();
+        m_nettoyageEnCours = false;
+        if (code == 0) {
+            Q_EMIT message(QStringLiteral("Nettoyage fini"));
+        } else {
+            Q_EMIT erreur(QStringLiteral("Nettoyage annulé ou impossible"));
+        }
+        actualiserNettoyage();
+    });
+    p->start(QStringLiteral("systemctl"), {QStringLiteral("start"), QStringLiteral("thomas-nettoyage.service")});
 }
 
 void Controle::actualiser()

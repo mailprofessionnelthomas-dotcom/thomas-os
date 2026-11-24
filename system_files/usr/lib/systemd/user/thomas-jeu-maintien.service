@@ -1,0 +1,6 @@
+[Unit]
+Description=Thomas OS : profil d'énergie « performance » pendant le jeu
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/thomas-jeu-maintien

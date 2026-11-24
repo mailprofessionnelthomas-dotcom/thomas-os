@@ -72,8 +72,8 @@
 |---|---|---|
 | `org.thomasos.Style1` | `Liste() → a(ss)`, `Actuel() → s`, `Appliquer(s id, s disposition)`, `Secours()`, `Annuler()`, `PeutAnnuler() → b` ; pour le Studio : `Catalogue() → s` (JSON), `Lire(s id) → s` (JSON), `Enregistrer(s id, s reglagesJson) → (s id, as corrections)`, `Importer(s chemin .conf/.json) → (s id, as corrections)`, `Exporter(s id, s chemin)`, `Supprimer(s id)` | `StyleChange(s id)`, `ListeChange()` |
 | `org.thomasos.Config1` | `Lire(s section, s cle) → s`, `Ecrire(s section, s cle, s valeur)` (faits, phase 7, dans `~/.config/thomas-os/thomas.conf`) ; `Sauvegarder() → s fichier`, `Restaurer(s fichier)` (à faire) | `ConfigChange(s section, s cle)` |
-| `org.thomasos.Systeme1` (lecture seule) | `Infos() → a{ss}` (version, variante, canal, base), `CarteGraphique() → a{ss}` (détectée / attendue), `Reseau() → a{ss}` (etat, type, nom), `WindowsPresent() → b` (à faire) | — |
-| `org.thomasos.Diagnostic1` | `Rapport() → s` (texte : services en échec, espace disque, températures) | `Alerte(s type, s message)` |
+| `org.thomasos.Systeme1` (lecture seule) | `Infos() → a{ss}` (version, variante, canal, base), `CarteGraphique() → a{ss}` (détectée / attendue), `Reseau() → a{ss}` (etat, type, nom), `Energie() → a{ss}` (profil, profils, jeu), `ChoisirEnergie(s profil)`, `WindowsPresent() → b` (à faire) | — |
+| `org.thomasos.Diagnostic1` | `Rapport() → s` (texte : services en échec, espace disque, températures), `Temperatures() → a(sdd)` (nom, °C, limite), `TestReseau() → a{ss}` (latence, stabilité, DNS, signal Wi-Fi), `TestDebit() → a{ss}`, `Nettoyage() → a{ss}` (dernier nettoyage) | `Alerte(s type, s message)` (à faire : les alertes passent aujourd'hui par `thomas-surveillance`) |
 
 **Règles :**
 - Les interfaces sont **versionnées** (`…1`, `…2`). On n'enlève jamais une méthode : on crée la version suivante.
@@ -278,6 +278,6 @@ docs/                  ARCHITECTURE.md, guides
 | 5 | Core D-Bus + Thomas Control | VM : temps d'ouverture, pages |
 | 6 | Thomas Studio natif | VM : style modifié → enregistré → maquette ; appliqué → photo comparée ; annulé → style d'avant |
 | 7 | Thomas Welcome (+ masquer Bazzite Portal) | VM : 1re session (Welcome ouvert, Portal absent, 7 étapes, fermé = ne revient plus) |
-| 8 | Intégration : nettoyage, gaming, températures, diagnostic réseau | VM + mesures |
+| 8 | Intégration : nettoyage, gaming, températures, diagnostic réseau | VM (faux jeu Steam, faux capteur à 99 °C, coût mesuré de chaque vérification) ; gain en jeu à mesurer sur le PC réel |
 | 9 | ISO live, installation, dual boot, Secure Boot (MOK), logo animé au démarrage | VM avec Secure Boot |
 | 10 | Validation sur matériel réel, guides | PC réel (par le propriétaire) |

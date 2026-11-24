@@ -162,6 +162,16 @@ jobs:
           c.save("resultats/comparaison-maquette-vrai.jpg", quality=85)
           EOF
 
+      # Phase 8 : mode jeu (faux jeu Steam), nettoyage, diagnostic réseau, alerte de surchauffe, pages de Control
+      - name: Phase 8 (jeu, nettoyage, réseau, surveillance)
+        run: |
+          bash ci/vm/dans-la-vm.sh phase8 | tee -a resultats/rapport.txt
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/10-alerte-chaleur.png
+          bash ci/vm/dans-la-vm.sh control-pages | tee -a resultats/rapport.txt
+          mkdir -p resultats/control
+          ${SSH} "tar -C /tmp/control -c ." | tar -x -C resultats/control
+          python3 ci/planche.py resultats/control-pages.jpg resultats/control/page-*.png
+
       - name: Installation automatique des applis (information)
         continue-on-error: true
         timeout-minutes: 15

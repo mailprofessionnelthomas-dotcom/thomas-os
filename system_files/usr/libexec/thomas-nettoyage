@@ -1,0 +1,17 @@
+#!/bin/bash
+# Nettoyage sûr (thomas-nettoyage.timer chaque semaine, ou Thomas Control → Maintenance avec ton mot de passe) :
+#   - les composants Flatpak que plus aucune appli n'utilise ;
+#   - jamais tes documents, jamais la version précédente du système (elle sert à revenir en arrière).
+# Les miniatures de plus de 30 jours sont effacées à part, par systemd (user-tmpfiles.d/thomas-os.conf).
+set -uo pipefail
+avant="$(df --output=avail -B1 /var | tail -1)"
+if command -v flatpak >/dev/null; then
+    flatpak uninstall --system --unused -y --noninteractive || echo "flatpak : rien de fait (code $?)"
+fi
+apres="$(df --output=avail -B1 /var | tail -1)"
+libere=$(((apres - avant) / 1048576))
+((libere < 0)) && libere=0
+mkdir -p /var/lib/thomas-os
+printf '{"date": "%s", "libere_mo": %d}\n' "$(date -Iseconds)" "${libere}" >/var/lib/thomas-os/nettoyage.json
+chmod 0644 /var/lib/thomas-os/nettoyage.json
+echo "Nettoyage fini : ${libere} Mo libérés"

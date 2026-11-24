@@ -184,7 +184,11 @@ open(sys.argv[1], "w", encoding="utf-8").write(
 EOF
 #     Fenêtres de choix (partie de base de Styles Thomas OS)
 rpm -q kdialog >/dev/null || dnf5 -y install kdialog
-chmod 0755 /usr/bin/thomas-style /usr/libexec/thomas-core
+chmod 0755 /usr/bin/thomas-style /usr/libexec/thomas-core /usr/libexec/thomas-surveillance /usr/libexec/thomas-jeu \
+    /usr/libexec/thomas-jeu-maintien /usr/libexec/thomas-nettoyage
+#     Phase 8 : nettoyage chaque semaine (système), mode jeu automatique et surveillance (dans chaque session)
+systemctl enable thomas-nettoyage.timer
+systemctl --global enable thomas-jeu.timer thomas-surveillance.timer
 gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
 #     1er login : Thomas Welcome remplace « Bazzite Portal » et les annonces de Bazzite (constatés en VM).
 #     Portal = /etc/skel/.config/autostart (copié chez chaque nouveau compte), annonces = /etc/xdg/autostart.
@@ -312,6 +316,20 @@ test -f /usr/share/applications/org.thomasos.welcome.desktop
 test -f /etc/xdg/autostart/org.thomasos.welcome.desktop
 test ! -e /etc/skel/.config/autostart/bazzite-portal.desktop
 test ! -e /etc/xdg/autostart/bazzite-announcement.desktop
+# Phase 8 : scripts valides, minuteurs activés, alerte de chaleur déclenchée par de faux capteurs à 99 °C
+bash -n /usr/libexec/thomas-jeu /usr/libexec/thomas-nettoyage
+python3 -c 'import ast, sys; [ast.parse(open(f, encoding="utf-8").read(), f) for f in sys.argv[1:]]' \
+    /usr/libexec/thomas-surveillance /usr/libexec/thomas-jeu-maintien
+test -L /etc/systemd/system/timers.target.wants/thomas-nettoyage.timer
+test -L /etc/systemd/user/timers.target.wants/thomas-jeu.timer
+test -L /etc/systemd/user/timers.target.wants/thomas-surveillance.timer
+faux="$(mktemp -d)"
+mkdir -p "${faux}/hwmon0"
+echo k10temp >"${faux}/hwmon0/name"
+echo 99000 >"${faux}/hwmon0/temp1_input"
+THOMAS_HWMON="${faux}" XDG_STATE_HOME="${faux}/etat" /usr/libexec/thomas-surveillance | grep -q 'alerte : Processeur (AMD) chauffe : 99' \
+    || { echo "ERREUR : la surveillance ne voit pas une surchauffe"; exit 1; }
+rm -rf "${faux}"
 test -f /etc/xdg/autostart/thomas-style.desktop
 case "${GPU_VARIANT}" in
     amd-intel) ;;

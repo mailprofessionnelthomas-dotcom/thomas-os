@@ -12,6 +12,13 @@ info() { echo "INFO    $*"; }
 en_root() { "$@"; }
 # nom de l'écran Wayland de la session de « testeur » (pas forcément wayland-0 : constaté en VM)
 ecran_wayland() { basename "$(ls /run/user/"$1"/wayland-[0-9]* 2>/dev/null | grep -v '\.lock$' | head -1)"; }
+# appel d'une méthode de Thomas Core (interface Systeme1 par défaut) dans la session de « testeur »
+style_core_systeme() {
+    local u
+    u="$(id -u testeur)"
+    runuser -u testeur -- env DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" gdbus call --session --timeout 90 \
+        --dest org.thomasos.Core --object-path /org/thomasos/Core --method "org.thomasos.${2:-Systeme1}.$1" 2>&1
+}
 # appel d'une méthode Style1 de Thomas Core dans la session de « testeur » (arguments au format GVariant : "'texte'")
 style_core() {
     local u
@@ -242,12 +249,80 @@ annuler)
     if [[ "$(grep -c '^plugin=org.thomasos.barre$' "${applets}")" -ge 2 ]]; then ok "la barre capsule est revenue"; else ko "la barre capsule n'est pas revenue"; fi
     sleep 4
     ;;
+phase8)
+    # mode jeu (faux jeu Steam), nettoyage, diagnostic réseau, puis une fausse surchauffe (photographiée ensuite)
+    u="$(id -u testeur)"
+    SU=(runuser -u testeur -- env XDG_RUNTIME_DIR="/run/user/${u}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus")
+    for t in thomas-jeu.timer thomas-surveillance.timer; do
+        if "${SU[@]}" systemctl --user is-active --quiet "${t}"; then ok "${t} actif dans la session"; else ko "${t} inactif dans la session"; fi
+    done
+    if systemctl is-enabled --quiet thomas-nettoyage.timer; then ok "nettoyage chaque semaine programmé"; else ko "nettoyage pas programmé"; fi
+    pp=(org.freedesktop.UPower.PowerProfiles /org/freedesktop/UPower/PowerProfiles org.freedesktop.UPower.PowerProfiles)
+    profil() { busctl get-property "${pp[@]}" ActiveProfile 2>/dev/null | cut -d'"' -f2; }
+    profils="$(busctl get-property "${pp[@]}" Profiles 2>/dev/null | grep -o '"Profile" s "[a-z-]*"' | cut -d'"' -f4 | tr '\n' ' ')"
+    avant="$(profil)"
+    info "énergie : profil « ${avant:-aucun service} », profils possibles : ${profils:-aucun}"
+    cout() { "${SU[@]}" bash -c "TIMEFORMAT=%3R; for i in 1 2 3 4 5; do time $1 >/dev/null; done" 2>&1 | awk '{s+=$1} END {printf "%.0f", s/NR*1000}'; }
+    info "mesure : une vérification du mode jeu (sans jeu) prend $(cout /usr/libexec/thomas-jeu) ms, toutes les 15 s"
+    info "mesure : un passage de la surveillance prend $(cout /usr/libexec/thomas-surveillance) ms, toutes les 2 min"
+    "${SU[@]}" bash -c 'exec -a "SteamLaunch AppId=480 -- jeu-de-test" sleep 120' </dev/null >/dev/null 2>&1 &
+    sleep 1
+    "${SU[@]}" systemctl --user start thomas-jeu.service
+    for _ in $(seq 15); do "${SU[@]}" systemctl --user is-active --quiet thomas-jeu-maintien.service && break; sleep 1; done
+    if "${SU[@]}" systemctl --user is-active --quiet thomas-jeu-maintien.service; then ok "mode jeu : le faux jeu Steam est reconnu"; else ko "mode jeu : jeu pas reconnu"; fi
+    if [[ " ${profils} " == *" performance "* ]]; then
+        for _ in $(seq 10); do [[ "$(profil)" == performance ]] && break; sleep 1; done
+        if [[ "$(profil)" == performance ]]; then ok "mode jeu : profil « performance » pendant le jeu"; else ko "mode jeu : profil resté « $(profil) »"; fi
+        e="$(style_core_systeme Energie)"
+        if [[ "${e}" == *"'jeu': 'oui'"* ]]; then ok "Thomas Core voit le mode jeu actif"; else ko "Thomas Core ne voit pas le mode jeu : ${e:0:200}"; fi
+    else info "le profil « performance » n'existe pas dans cette VM : seule la reconnaissance du jeu est vérifiée"; fi
+    pkill -u testeur -f 'SteamLaunch AppId=480'
+    for _ in $(seq 15); do "${SU[@]}" systemctl --user is-active --quiet thomas-jeu-maintien.service || break; sleep 1; done
+    if "${SU[@]}" systemctl --user is-active --quiet thomas-jeu-maintien.service; then ko "mode jeu : toujours actif après le jeu"
+    elif [[ "$(profil)" == "${avant}" ]]; then ok "jeu fini : profil d'avant remis (« ${avant:-aucun} »)"
+    else ko "jeu fini mais profil « $(profil) » au lieu de « ${avant} »"; fi
+    "${SU[@]}" journalctl --user -u thomas-jeu-maintien.service --no-pager -o cat 2>/dev/null | tail -3 | sed 's/^/INFO    /'
+    # nettoyage (en root, comme le minuteur)
+    if systemctl start thomas-nettoyage.service && [[ -s /var/lib/thomas-os/nettoyage.json ]]; then ok "nettoyage : $(cat /var/lib/thomas-os/nettoyage.json)"; else ko "nettoyage en échec"; fi
+    r="$(style_core_systeme Nettoyage Diagnostic1)"
+    if [[ "${r}" == *libere_mo* ]]; then ok "Thomas Core lit le dernier nettoyage"; else ko "Core Nettoyage : ${r:0:200}"; fi
+    # diagnostic réseau (mesure seulement)
+    r="$(style_core_systeme TestReseau Diagnostic1)"
+    if [[ "${r}" == *latence_ms* ]]; then ok "diagnostic réseau : ${r:0:220}"; else ko "diagnostic réseau : ${r:0:220}"; fi
+    r="$(style_core_systeme TestDebit Diagnostic1)"
+    if [[ "${r}" == *debit_mbps* ]]; then ok "débit mesuré : ${r:0:160}"; else ko "débit : ${r:0:200}"; fi
+    # surveillance : faux capteur à 99 °C => une alerte (photographiée juste après)
+    rm -rf /tmp/faux-hwmon /tmp/faux-etat
+    install -d -o testeur /tmp/faux-hwmon/hwmon0 /tmp/faux-etat
+    echo k10temp >/tmp/faux-hwmon/hwmon0/name
+    echo 99000 >/tmp/faux-hwmon/hwmon0/temp1_input
+    r="$("${SU[@]}" THOMAS_HWMON=/tmp/faux-hwmon XDG_STATE_HOME=/tmp/faux-etat /usr/libexec/thomas-surveillance)"
+    if [[ "${r}" == *"chauffe : 99"* ]]; then ok "surveillance : alerte envoyée pour une surchauffe (faux capteur à 99 °C)"; else ko "surveillance : pas d'alerte (${r})"; fi
+    r="$("${SU[@]}" THOMAS_HWMON=/tmp/faux-hwmon XDG_STATE_HOME=/tmp/faux-etat /usr/libexec/thomas-surveillance)"
+    if [[ -z "${r}" ]]; then ok "surveillance : pas de 2e alerte dans les 30 min"; else ko "surveillance : alerte répétée (${r})"; fi
+    sleep 2
+    ;;
+control-pages)
+    # Thomas Control : chacune des 13 catégories s'ouvre sans erreur (photos dans /tmp/control)
+    u="$(id -u testeur)"
+    E=(XDG_RUNTIME_DIR="/run/user/${u}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" WAYLAND_DISPLAY="$(ecran_wayland "${u}")"
+       QT_QPA_PLATFORM=wayland XDG_CURRENT_DESKTOP=KDE KDE_FULL_SESSION=true QT_FORCE_STDERR_LOGGING=1)
+    rm -rf /tmp/control
+    install -d -o testeur /tmp/control
+    runuser -u testeur -- env "${E[@]}" timeout 120 thomas-control --capture /tmp/control </dev/null >/tmp/control-pages.log 2>&1
+    n="$(ls /tmp/control/page-*.png 2>/dev/null | wc -l)"
+    if [[ "${n}" -eq 13 ]]; then ok "les 13 pages de Thomas Control s'ouvrent"; else
+        ko "${n} page(s) de Thomas Control sur 13 :"; grep . /tmp/control-pages.log | tail -8 | sed 's/^/INFO    /'
+    fi
+    e="$(grep -iE 'qml|error|warning' /tmp/control-pages.log | grep -v 'Qt Quick Layouts' | sort -u | tail -8)"
+    if [[ -z "${e}" ]]; then ok "aucune erreur QML dans les pages de Thomas Control"; else ko "messages des pages de Thomas Control :"; echo "${e}" | sed 's/^/INFO    /'; fi
+    ;;
 applis)
     for _ in $(seq 72); do [[ -n "$(systemctl show -p ExecMainExitTimestamp --value thomas-flatpak-preinstall.service)" ]] && break; sleep 10; done
     info "service des applis : $(systemctl show -p Result --value thomas-flatpak-preinstall.service)"
     info "applis Flatpak installées : $(flatpak list --app --columns=application | tr '\n' ' ')"
     ;;
 *)
-    echo "usage : verifier.sh demarrage|preparer|session|bienvenue|bienvenue-fermee|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|applis"; exit 2 ;;
+    echo "usage : verifier.sh demarrage|preparer|session|bienvenue|bienvenue-fermee|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|phase8|control-pages|applis"; exit 2 ;;
 esac
 exit $((erreurs > 0))

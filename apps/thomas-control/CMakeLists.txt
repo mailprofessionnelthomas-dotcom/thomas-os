@@ -19,6 +19,10 @@ qt_add_qml_module(thomas-control
         qml/PageCategorie.qml
         qml/PageApparence.qml
         qml/PageSysteme.qml
+        qml/PagePerformances.qml
+        qml/PageGaming.qml
+        qml/PageMaintenance.qml
+        qml/PageReseau.qml
         qml/Carte.qml
 )
 target_include_directories(thomas-control PRIVATE src)  # l'enregistrement QML généré inclut « controle.h »

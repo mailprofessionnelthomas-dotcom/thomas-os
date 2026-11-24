@@ -10,7 +10,8 @@ if [[ -z "${DANS_DBUS:-}" ]]; then
     mkdir -p "${HOME}" /tmp/donnees/dbus-1/services "${XDG_RUNTIME_DIR}"
     chmod 700 "${XDG_RUNTIME_DIR}"
     # Thomas Core démarré à la demande par D-Bus, avec le moteur et les styles du dépôt
-    export THOMAS_STYLE_BIN=/depot/system_files/usr/bin/thomas-style THOMAS_STYLES_DIR=/depot/system_files/usr/share/thomas-os/styles
+    export THOMAS_STYLE_BIN=/depot/system_files/usr/bin/thomas-style THOMAS_STYLES_DIR=/depot/system_files/usr/share/thomas-os/styles \
+        THOMAS_PYTHON=/depot/system_files/usr/lib/thomas-os/python
     printf '[D-BUS Service]\nName=org.thomasos.Core\nExec=/usr/bin/python3 /depot/system_files/usr/libexec/thomas-core\n' \
         >/tmp/donnees/dbus-1/services/org.thomasos.Core.service
     export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_FORCE_STDERR_LOGGING=1 DANS_DBUS=1
@@ -67,6 +68,16 @@ gdbus call --session --dest org.thomasos.Core --object-path /org/thomasos/Core \
     --method org.thomasos.Config1.Ecrire "'bienvenue'" "'fait'" "'oui'" >/dev/null || { echo "ECHEC   Config1.Ecrire"; erreurs=$((erreurs + 1)); }
 if timeout 15 "${W}" --premier-lancement </dev/null; then echo "OK      Welcome ne se rouvre pas une fois fini"; else
     echo "ECHEC   Welcome s'ouvre encore une fois fini"; erreurs=$((erreurs + 1)); fi
+
+# Thomas Control : photo de chacune des 13 catégories (pages de la phase 8 comprises)
+mkdir -p /essai/control
+timeout 120 /sortie/usr/bin/thomas-control --capture /essai/control </dev/null || echo "ECHEC   photos de Thomas Control (code $?)"
+n="$(ls /essai/control/page-*.png 2>/dev/null | wc -l)"
+[[ "${n}" -eq 13 ]] || { echo "ECHEC   ${n} pages de Thomas Control sur 13"; erreurs=$((erreurs + 1)); }
+# Thomas Core, phase 8 : températures (aucune ici), énergie (pas de bus système ici), diagnostic réseau
+for m in org.thomasos.Diagnostic1.Temperatures org.thomasos.Systeme1.Energie org.thomasos.Diagnostic1.TestReseau; do
+    echo "Core ${m##*.} : $(gdbus call --session --dest org.thomasos.Core --object-path /org/thomasos/Core --method "${m}" 2>&1 | head -c 300)"
+done
 
 for f in thomas essai-windows essai-macos essai-vertical essai-libre thomas-menu macos-menu; do
     [[ -s "/essai/maquette-${f}.png" ]] || { echo "ECHEC   maquette-${f}.png absente"; erreurs=$((erreurs + 1)); }

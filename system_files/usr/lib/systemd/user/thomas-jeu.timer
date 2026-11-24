@@ -1,0 +1,10 @@
+[Unit]
+Description=Thomas OS : mode jeu automatique (regarde toutes les 15 s si un jeu tourne)
+
+[Timer]
+OnStartupSec=1min
+OnUnitActiveSec=15s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

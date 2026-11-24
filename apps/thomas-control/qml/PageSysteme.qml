@@ -7,8 +7,6 @@ import org.kde.kirigami as Kirigami
 import ThomasControl
 
 Kirigami.ScrollablePage {
-    Component.onCompleted: Controle.actualiserRapport()
-
     ColumnLayout {
         spacing: Kirigami.Units.largeSpacing
 
@@ -24,16 +22,7 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             wrapMode: Text.Wrap
             opacity: 0.75
-            text: "Les mises à jour se téléchargent en fond et s'appliquent au prochain redémarrage. La version précédente reste disponible au démarrage en cas de problème."
+            text: "Les mises à jour se téléchargent en fond et s'appliquent au prochain redémarrage. La version précédente reste disponible au démarrage en cas de problème. Le diagnostic est dans « Maintenance »."
         }
-
-        Kirigami.Heading { text: "Diagnostic"; level: 2 }
-        QQC2.TextArea {
-            Layout.fillWidth: true
-            readOnly: true
-            text: Controle.rapport || "…"
-            font.family: "monospace"
-        }
-        QQC2.Button { text: "Relancer le diagnostic"; icon.name: "view-refresh"; onClicked: Controle.actualiserRapport() }
     }
 }
