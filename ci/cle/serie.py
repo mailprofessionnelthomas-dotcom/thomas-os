@@ -59,7 +59,8 @@ class Serie:
     def commande(self, c, delai=120):
         """Lance une commande dans le shell root et renvoie son code de sortie (None si pas de réponse)."""
         self.n += 1
-        self.envoyer(f"{c}; echo FIN-$?-{self.n}\r")
+        sep = " " if c.rstrip().endswith("&") else "; "  # « &; » est une erreur de syntaxe en bash
+        self.envoyer(f"{c}{sep}echo FIN-$?-{self.n}\r")
         m = self.attendre(rf"FIN-(\d+)-{self.n}\b", delai)
         return int(m.group(1)) if m else None
 
@@ -105,8 +106,10 @@ def main():
         sys.exit("ECHEC : kickstart mal copié")
 
     etape("installation (installateur sans interface, mêmes réglages que le vrai)")
-    s.commande("(anaconda --liveinst --cmdline --kickstart=/tmp/test.ks >/tmp/install.log 2>&1; "
-               "echo \"THOMAS-INSTALL: anaconda fini, code $?\" >/dev/ttyS0) </dev/null >/dev/null 2>&1 &")
+    if s.commande("(anaconda --liveinst --cmdline --kickstart=/tmp/test.ks >/tmp/install.log 2>&1; "
+                  "echo \"THOMAS-INSTALL: anaconda fini, code $?\" >/dev/ttyS0) </dev/null >/dev/null 2>&1 &") != 0:
+        sys.exit("ECHEC : installateur pas lancé")
+    s.commande("sleep 20; pgrep -af 'anaconda --liveinst --cmdline' | head -2", 60)
     debut = time.time()
     m = s.attendre(r"THOMAS-INSTALL: (post fini[^\r\n]*|anaconda fini, code \d+)", 60 * 60)
     duree = (time.time() - debut) / 60
