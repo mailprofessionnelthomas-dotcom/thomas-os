@@ -108,18 +108,21 @@ def main():
     if rc != 0:
         sys.exit(f"ECHEC : faux yad pas installé ({rc})")
 
-    etape("copie du kickstart de test")
+    etape("réponses de test : elles remplacent interactive-defaults.ks, qui inclut le fichier d'origine tel quel")
+    # (en mode « live », Anaconda ne lit que ce fichier : --kickstart y est ignoré, constaté sur GitHub)
     contenu = base64.b64encode(open(kickstart, "rb").read()).decode()
     s.commande("rm -f /tmp/ks.b64")
     for i in range(0, len(contenu), 400):
         s.commande(f"echo -n {contenu[i:i + 400]} >>/tmp/ks.b64")
-    if s.commande("base64 -d /tmp/ks.b64 >/tmp/test.ks && grep -q interactive-defaults /tmp/test.ks") != 0:
-        sys.exit("ECHEC : kickstart mal copié")
+    if s.commande("cp /usr/share/anaconda/interactive-defaults.ks /tmp/defaults-origine.ks && "
+                  "base64 -d /tmp/ks.b64 >/usr/share/anaconda/interactive-defaults.ks && "
+                  "grep -q defaults-origine /usr/share/anaconda/interactive-defaults.ks") != 0:
+        sys.exit("ECHEC : réponses de test mal copiées")
 
     etape("installation (installateur sans interface, mêmes réglages que le vrai)")
     # son propre bus D-Bus de session : sans lui, l'installateur s'arrête net (il veut bloquer la mise en veille)
     depuis = len(s.tout)
-    if s.commande("(dbus-run-session -- anaconda --liveinst --cmdline --kickstart=/tmp/test.ks >/tmp/install.log 2>&1; "
+    if s.commande("(dbus-run-session -- anaconda --liveinst --cmdline >/tmp/install.log 2>&1; "
                   "echo \"THOMAS-INSTALL: anaconda fini, code $?\" >/dev/ttyS0) </dev/null >/dev/null 2>&1 &") != 0:
         sys.exit("ECHEC : installateur pas lancé")
     debut = time.time()

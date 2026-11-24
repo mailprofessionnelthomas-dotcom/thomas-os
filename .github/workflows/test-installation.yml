@@ -73,13 +73,14 @@ jobs:
           lang fr_FR.UTF-8
           keyboard --vckeymap=fr --xlayouts='fr'
           timezone Europe/Paris --utc
+          ignoredisk --only-use=vda
           zerombr
-          clearpart --all --initlabel --disklabel=gpt
+          clearpart --all --initlabel --disklabel=gpt --drives=vda
           autopart --type=btrfs --noswap
           rootpw --lock
           user --name=testeur --groups=wheel --password=${MDP} --plaintext
           sshkey --username=testeur "$(cat vm_key.pub)"
-          %include /usr/share/anaconda/interactive-defaults.ks
+          %include /tmp/defaults-origine.ks
           %post --erroronfail
           systemctl enable sshd.service
           %end
