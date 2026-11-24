@@ -53,6 +53,20 @@ done
 timeout 60 "${S}" --apercu /essai/maquette-thomas-menu.png --menu --ecran 1920x1080 thomas </dev/null || echo "ECHEC   maquette avec menu"
 timeout 60 "${S}" --apercu /essai/maquette-macos-menu.png --menu --ecran 1920x1080 essai-macos </dev/null || echo "ECHEC   maquette macOS avec menu"
 timeout 40 "${S}" --capture /essai/fenetre-studio.png thomas </dev/null || echo "ECHEC   photo de la fenêtre (code $?)"
+timeout 60 "${S}" --apercu /essai/apercu-reduit.png --ecran 1920x1080 --taille 640x360 thomas </dev/null || echo "ECHEC   aperçu réduit"
+python3 -c 'import struct,sys; d=open("/essai/apercu-reduit.png","rb").read(24); l,h=struct.unpack(">II",d[16:24]); print(f"aperçu réduit : {l}x{h}"); sys.exit(0 if (l,h)==(640,360) else 1)' \
+    || { echo "ECHEC   aperçu réduit pas en 640x360"; erreurs=$((erreurs + 1)); }
+
+# Thomas Welcome : photo de chaque étape, puis « déjà fait » => il ne se rouvre plus au lancement de session
+W=/sortie/usr/bin/thomas-welcome
+mkdir -p /essai/bienvenue
+timeout 90 "${W}" --capture /essai/bienvenue </dev/null || echo "ECHEC   photos de Thomas Welcome (code $?)"
+n="$(ls /essai/bienvenue/etape-*.png 2>/dev/null | wc -l)"
+[[ "${n}" -eq 7 ]] || { echo "ECHEC   ${n} photos de Thomas Welcome sur 7"; erreurs=$((erreurs + 1)); }
+gdbus call --session --dest org.thomasos.Core --object-path /org/thomasos/Core \
+    --method org.thomasos.Config1.Ecrire "'bienvenue'" "'fait'" "'oui'" >/dev/null || { echo "ECHEC   Config1.Ecrire"; erreurs=$((erreurs + 1)); }
+if timeout 15 "${W}" --premier-lancement </dev/null; then echo "OK      Welcome ne se rouvre pas une fois fini"; else
+    echo "ECHEC   Welcome s'ouvre encore une fois fini"; erreurs=$((erreurs + 1)); fi
 
 for f in thomas essai-windows essai-macos essai-vertical essai-libre thomas-menu macos-menu; do
     [[ -s "/essai/maquette-${f}.png" ]] || { echo "ECHEC   maquette-${f}.png absente"; erreurs=$((erreurs + 1)); }

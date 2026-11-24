@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Bienvenue dans Thomas OS
+Comment=S'ouvre à la 1re ouverture de session seulement (ensuite il se ferme tout de suite)
+Exec=thomas-welcome --premier-lancement
+Icon=thomas-os
+OnlyShowIn=KDE;
+NoDisplay=true
+X-KDE-autostart-phase=2

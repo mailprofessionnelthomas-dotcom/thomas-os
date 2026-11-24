@@ -53,10 +53,53 @@ session)
         loginctl list-sessions --no-legend | sed 's/^/INFO    session : /'
         journalctl -b -u display-manager --no-pager | tail -12 | sed 's/^/INFO    /'
     fi
-    actuel="$(getent passwd testeur | cut -d: -f6)/.config/thomas-os/actuel.conf"
+    maison="$(getent passwd testeur | cut -d: -f6)"
+    actuel="${maison}/.config/thomas-os/actuel.conf"
     for _ in $(seq 45); do [[ -f "${actuel}" ]] && break; sleep 2; done
     if [[ -f "${actuel}" ]]; then ok "style posé au 1er login ($(grep -m1 '^id' "${actuel}"))"; else ko "style non posé au 1er login"; fi
+    # Thomas Welcome à la place de Bazzite Portal et des annonces de Bazzite
+    for _ in $(seq 30); do pgrep -u testeur -x thomas-welcome >/dev/null && break; sleep 2; done
+    if pgrep -u testeur -x thomas-welcome >/dev/null; then ok "Thomas Welcome ouvert au 1er login"; else ko "Thomas Welcome pas ouvert au 1er login"; fi
+    if pgrep -u testeur -f yafti >/dev/null; then ko "Bazzite Portal s'est ouvert"; else ok "Bazzite Portal ne s'ouvre plus"; fi
+    if [[ -e "${maison}/.config/autostart/bazzite-portal.desktop" || -e /etc/xdg/autostart/bazzite-announcement.desktop ]]; then
+        ko "Portal ou annonces de Bazzite encore lancés à l'ouverture de session"
+    else ok "annonces de Bazzite retirées de l'ouverture de session"; fi
     journalctl -b --no-pager _UID="$(id -u testeur)" 2>/dev/null | grep -iE 'thomas-style|⚠️|Erreur :' | tail -6 | sed 's/^/INFO    /'
+    ;;
+bienvenue)
+    # Thomas Welcome : chaque étape s'affiche sans erreur (photos dans /tmp/bienvenue, récupérées par GitHub)
+    u="$(id -u testeur)"
+    E=(XDG_RUNTIME_DIR="/run/user/${u}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" WAYLAND_DISPLAY="$(ecran_wayland "${u}")"
+       QT_QPA_PLATFORM=wayland XDG_CURRENT_DESKTOP=KDE KDE_FULL_SESSION=true QT_FORCE_STDERR_LOGGING=1)
+    rm -rf /tmp/bienvenue
+    install -d -o testeur /tmp/bienvenue
+    runuser -u testeur -- env "${E[@]}" timeout 90 thomas-welcome --capture /tmp/bienvenue </dev/null >/tmp/bienvenue.log 2>&1
+    n="$(ls /tmp/bienvenue/etape-*.png 2>/dev/null | wc -l)"
+    if [[ "${n}" -eq 7 ]]; then ok "les 7 étapes de Thomas Welcome s'affichent"; else
+        ko "${n} étape(s) de Thomas Welcome sur 7 :"; grep . /tmp/bienvenue.log | tail -8 | sed 's/^/INFO    /'
+    fi
+    e="$(grep -iE 'qml|error|warning' /tmp/bienvenue.log | grep -v 'Qt Quick Layouts' | sort -u | tail -8)"
+    if [[ -z "${e}" ]]; then ok "aucune erreur QML dans Thomas Welcome"; else ko "messages de Thomas Welcome :"; echo "${e}" | sed 's/^/INFO    /'; fi
+    info "aperçus des styles dans l'image : $(ls /usr/share/thomas-os/apercus/*.png 2>/dev/null | wc -l)"
+    ;;
+bienvenue-fermee)
+    # fermé par l'utilisateur (Alt+F4, envoyé par QEMU) : retenu comme « fait », il ne revient plus
+    u="$(id -u testeur)"
+    maison="$(getent passwd testeur | cut -d: -f6)"
+    E=(XDG_RUNTIME_DIR="/run/user/${u}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" WAYLAND_DISPLAY="$(ecran_wayland "${u}")"
+       QT_QPA_PLATFORM=wayland XDG_CURRENT_DESKTOP=KDE KDE_FULL_SESSION=true)
+    for _ in $(seq 10); do pgrep -u testeur -x thomas-welcome >/dev/null || break; sleep 1; done
+    if pgrep -u testeur -x thomas-welcome >/dev/null; then
+        ko "Thomas Welcome encore ouvert après Alt+F4"
+        pkill -u testeur -x thomas-welcome
+    else ok "Thomas Welcome se ferme (Alt+F4)"; fi
+    if grep -q '^fait = oui$' "${maison}/.config/thomas-os/thomas.conf" 2>/dev/null; then ok "« bienvenue faite » retenu"; else ko "« bienvenue faite » pas retenu"; fi
+    if runuser -u testeur -- env "${E[@]}" timeout 15 thomas-welcome --premier-lancement </dev/null >/dev/null 2>&1; then
+        ok "Thomas Welcome ne se rouvre plus aux sessions suivantes"
+    else
+        ko "Thomas Welcome se rouvrirait à chaque session"
+        pkill -u testeur -x thomas-welcome
+    fi
     ;;
 situation)
     # le bureau en usage : une fenêtre (Dolphin) et une notification, dans la session de « testeur »
@@ -205,6 +248,6 @@ applis)
     info "applis Flatpak installées : $(flatpak list --app --columns=application | tr '\n' ' ')"
     ;;
 *)
-    echo "usage : verifier.sh demarrage|preparer|session|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|applis"; exit 2 ;;
+    echo "usage : verifier.sh demarrage|preparer|session|bienvenue|bienvenue-fermee|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|applis"; exit 2 ;;
 esac
 exit $((erreurs > 0))

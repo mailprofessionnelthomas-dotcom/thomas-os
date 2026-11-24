@@ -10,7 +10,9 @@ Window {
     property string fichierApercu
     property string ecran           // « 1920x1080 » ; vide = la taille de l'écran réel
     property bool menuOuvert: false
+    property string tailleImage     // « 640x360 » : image réduite (aperçus de l'écran de bienvenue) ; vide = taille de l'écran
     readonly property var taille: /^(\d+)x(\d+)$/.exec(ecran)
+    readonly property var reduite: /^(\d+)x(\d+)$/.exec(tailleImage)
 
     width: apercu.ecranL
     height: apercu.ecranH
@@ -39,6 +41,11 @@ Window {
     Timer {  // le temps que le fond d'écran et les icônes soient chargés
         id: attente
         interval: 2000
-        onTriggered: if (!apercu.grabToImage(r => Qt.exit(r.saveToFile(fen.fichierApercu) ? 0 : 1))) Qt.exit(1)
+        onTriggered: {
+            const fini = r => Qt.exit(r.saveToFile(fen.fichierApercu) ? 0 : 1)
+            const ok = fen.reduite ? apercu.grabToImage(fini, Qt.size(Number(fen.reduite[1]), Number(fen.reduite[2])))
+                                   : apercu.grabToImage(fini)
+            if (!ok) Qt.exit(1)
+        }
     }
 }

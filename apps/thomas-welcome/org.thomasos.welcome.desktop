@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Bienvenue dans Thomas OS
+GenericName=Écran de bienvenue
+Comment=Connexion, carte graphique, style et préférences : les premiers réglages de Thomas OS
+Exec=thomas-welcome
+Icon=thomas-os
+Categories=System;
+Keywords=bienvenue;démarrage;premiers pas;welcome;

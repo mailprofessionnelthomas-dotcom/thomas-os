@@ -186,6 +186,22 @@ EOF
 rpm -q kdialog >/dev/null || dnf5 -y install kdialog
 chmod 0755 /usr/bin/thomas-style /usr/libexec/thomas-core
 gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+#     1er login : Thomas Welcome remplace « Bazzite Portal » et les annonces de Bazzite (constatés en VM).
+#     Portal = /etc/skel/.config/autostart (copié chez chaque nouveau compte), annonces = /etc/xdg/autostart.
+#     Les annonces restent lisibles dans /usr/share/ublue-os/announcements.
+rm -f /etc/skel/.config/autostart/bazzite-portal.desktop /etc/xdg/autostart/bazzite-announcement.desktop
+#     Aperçus des styles pour l'écran de bienvenue : maquettes de Thomas Studio dessinées sans écran, avec le vrai
+#     Thomas Core (lancé par D-Bus). Non bloquant : sans aperçu, Welcome montre une icône.
+install -d /usr/share/thomas-os/apercus
+(
+    export HOME="$(mktemp -d)" XDG_RUNTIME_DIR="$(mktemp -d)" QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+    dbus-run-session -- bash -c 'for f in /usr/share/thomas-os/styles/*.conf; do
+        id="$(basename "${f}" .conf)"
+        timeout 90 thomas-studio --apercu "/usr/share/thomas-os/apercus/${id}.png" --ecran 1920x1080 --taille 640x360 "${id}" \
+            </dev/null >/dev/null 2>&1 || echo "::warning::aperçu du style ${id} non dessiné"
+    done'
+) || echo "::warning::aperçus des styles non dessinés"
+echo "aperçus des styles : $(ls /usr/share/thomas-os/apercus | wc -l)"
 
 # 2. Nom de l'OS : "Thomas OS" partout où le système affiche son nom.
 #    On garde ID=, ID_LIKE= et VERSION_ID= de Bazzite pour que ses outils continuent de marcher.
@@ -291,6 +307,11 @@ command -v thomas-control >/dev/null || { echo "ERREUR : Thomas Control absent";
 test -f /usr/share/applications/org.thomasos.control.desktop
 command -v thomas-studio >/dev/null || { echo "ERREUR : Thomas Studio absent"; exit 1; }
 test -f /usr/share/applications/org.thomasos.studio.desktop
+command -v thomas-welcome >/dev/null || { echo "ERREUR : Thomas Welcome absent"; exit 1; }
+test -f /usr/share/applications/org.thomasos.welcome.desktop
+test -f /etc/xdg/autostart/org.thomasos.welcome.desktop
+test ! -e /etc/skel/.config/autostart/bazzite-portal.desktop
+test ! -e /etc/xdg/autostart/bazzite-announcement.desktop
 test -f /etc/xdg/autostart/thomas-style.desktop
 case "${GPU_VARIANT}" in
     amd-intel) ;;

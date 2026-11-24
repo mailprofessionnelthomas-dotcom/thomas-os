@@ -6,10 +6,12 @@ Interfaces v1 : org.thomasos.Systeme1 (infos, carte graphique), org.thomasos.Sty
 org.thomasos.Diagnostic1 (rapport). Les applis Thomas OS passent par lui, jamais directement par KDE.
 Transition : le moteur de styles reste /usr/bin/thomas-style, chargé ici comme bibliothèque.
 """
+import configparser
 import importlib.machinery
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -37,6 +39,14 @@ XML = """<node>
   <interface name="org.thomasos.Systeme1">
     <method name="Infos"><arg type="a{ss}" direction="out"/></method>
     <method name="CarteGraphique"><arg type="a{ss}" direction="out"/></method>
+    <method name="Reseau"><arg type="a{ss}" direction="out"/></method>
+  </interface>
+  <interface name="org.thomasos.Config1">
+    <method name="Lire"><arg name="section" type="s" direction="in"/><arg name="cle" type="s" direction="in"/>
+      <arg type="s" direction="out"/></method>
+    <method name="Ecrire"><arg name="section" type="s" direction="in"/><arg name="cle" type="s" direction="in"/>
+      <arg name="valeur" type="s" direction="in"/></method>
+    <signal name="ConfigChange"><arg name="section" type="s"/><arg name="cle" type="s"/></signal>
   </interface>
   <interface name="org.thomasos.Style1">
     <method name="Liste"><arg type="a(ss)" direction="out"/></method>
@@ -107,6 +117,46 @@ def carte_graphique():
             "conforme": "oui" if conforme else "non", "conseil": conseil}
 
 
+def reseau():
+    """Connexion en cours (pour l'écran de bienvenue) : etat = connecte / deconnecte / inconnu."""
+    try:
+        sortie = subprocess.run(["nmcli", "-t", "-f", "TYPE,STATE,CONNECTION", "device"], capture_output=True, text=True,
+                                timeout=10, env={**os.environ, "LC_ALL": "C"}).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return {"etat": "inconnu", "type": "", "nom": ""}
+    for ligne in sortie.splitlines():
+        champs = [c.replace("\x00", ":") for c in ligne.replace("\\:", "\x00").split(":")]
+        if len(champs) >= 3 and champs[1] == "connected" and champs[0] in ("wifi", "ethernet"):
+            return {"etat": "connecte", "type": champs[0], "nom": champs[2]}
+    return {"etat": "deconnecte", "type": "", "nom": ""}
+
+
+CONFIG = STYLE.CFG / "thomas.conf"  # préférences générales (docs/ARCHITECTURE.md §4.2)
+NOM_CONFIG = re.compile(r"[a-z][a-z0-9_]{0,39}")
+
+
+def config_lire(section, cle):
+    cp = configparser.ConfigParser(interpolation=None)
+    cp.read(CONFIG, encoding="utf-8")
+    return cp.get(section, cle, fallback="")
+
+
+def config_ecrire(section, cle, valeur):
+    if not (NOM_CONFIG.fullmatch(section) and NOM_CONFIG.fullmatch(cle)) or "\n" in valeur:
+        raise STYLE.Erreur(f"réglage invalide : {section}.{cle}")
+    cp = configparser.ConfigParser(interpolation=None)
+    cp.read(CONFIG, encoding="utf-8")
+    if not cp.has_section(section):
+        cp.add_section(section)
+    cp[section][cle] = valeur
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    tmp = CONFIG.with_suffix(".tmp")
+    with tmp.open("w", encoding="utf-8") as fic:
+        fic.write("# Préférences de Thomas OS (écrites par Thomas Core)\n")
+        cp.write(fic)
+    tmp.replace(CONFIG)
+
+
 def rapport():
     lignes = [f"Thomas OS {lire_env().get('version', '?')}"]
     for nom, cmd in (("système", ["systemctl", "--failed", "--no-legend", "--plain"]),
@@ -156,7 +206,19 @@ class Service:
     def appel(self, conn, expediteur, chemin, interface, methode, params, invocation):
         self.rearmer()
         try:
-            if methode == "Infos":
+            if interface == "org.thomasos.Config1":  # mêmes noms de méthodes que Style1 : on regarde l'interface d'abord
+                if methode == "Lire":
+                    rep = GLib.Variant("(s)", (config_lire(*params.unpack()),))
+                elif methode == "Ecrire":
+                    section, cle, valeur = params.unpack()
+                    config_ecrire(section, cle, valeur)
+                    conn.emit_signal(None, CHEMIN, interface, "ConfigChange", GLib.Variant("(ss)", (section, cle)))
+                    rep = None
+                else:
+                    raise STYLE.Erreur(f"méthode inconnue : {methode}")
+            elif methode == "Reseau":
+                rep = GLib.Variant("(a{ss})", (reseau(),))
+            elif methode == "Infos":
                 rep = GLib.Variant("(a{ss})", (infos(),))
             elif methode == "CarteGraphique":
                 rep = GLib.Variant("(a{ss})", (carte_graphique(),))
@@ -222,7 +284,9 @@ class Service:
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--test":  # sans D-Bus : affiche ce que le service répondrait
-        print(json.dumps({"infos": infos(), "carte": carte_graphique()}, ensure_ascii=False, indent=1))
+        print(json.dumps({"infos": infos(), "carte": carte_graphique(), "reseau": reseau()}, ensure_ascii=False, indent=1))
+        config_ecrire("essai", "cle", "valeur")  # HOME jetable pendant le build
+        assert config_lire("essai", "cle") == "valeur"
         print(rapport())
         json.dumps(STYLE.catalogue())  # ce que reçoit Thomas Studio
         print(f"Studio : {len(STYLE.lister())} styles, « {STYLE.DEFAUT} » = {STYLE.lire_style(STYLE.DEFAUT)['origine']}")

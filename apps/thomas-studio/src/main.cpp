@@ -25,9 +25,11 @@ int main(int argc, char *argv[])
                                     QStringLiteral("FICHIER"));
     const QCommandLineOption menu(QStringLiteral("menu"), QStringLiteral("Maquette : avec le menu ouvert."));
     const QCommandLineOption ecran(QStringLiteral("ecran"), QStringLiteral("Maquette : taille de l'écran (ex. 1920x1080)."), QStringLiteral("TAILLE"));
+    const QCommandLineOption taille(QStringLiteral("taille"), QStringLiteral("Maquette : taille de l'image enregistrée (ex. 640x360)."),
+                                    QStringLiteral("TAILLE"));
     const QCommandLineOption capture(QStringLiteral("capture"), QStringLiteral("Photo de la fenêtre dans FICHIER (PNG) puis quitte."),
                                      QStringLiteral("FICHIER"));
-    options.addOptions({apercu, menu, ecran, capture});
+    options.addOptions({apercu, menu, ecran, taille, capture});
     options.addPositionalArgument(QStringLiteral("style"), QStringLiteral("Style à ouvrir (par défaut : le style actuel)."));
     options.process(app);
     const QString style = options.positionalArguments().value(0);
@@ -41,7 +43,8 @@ int main(int argc, char *argv[])
         moteur.setInitialProperties({{QStringLiteral("styleDemande"), style},
                                      {QStringLiteral("fichierApercu"), options.value(apercu)},
                                      {QStringLiteral("menuOuvert"), options.isSet(menu)},
-                                     {QStringLiteral("ecran"), options.value(ecran)}});
+                                     {QStringLiteral("ecran"), options.value(ecran)},
+                                     {QStringLiteral("tailleImage"), options.value(taille)}});
         moteur.loadFromModule(QStringLiteral("ThomasStudio"), QStringLiteral("Maquette"));
     } else {
         moteur.setInitialProperties({{QStringLiteral("styleDemande"), style}, {QStringLiteral("fichierCapture"), options.value(capture)}});

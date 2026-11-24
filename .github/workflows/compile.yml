@@ -51,6 +51,7 @@ jobs:
         run: |
           sudo apt-get install -y -qq python3-pil >/dev/null
           python3 ci/planche.py essai/planche.jpg essai/maquette-*.png essai/fenetre-studio.png || true
+          python3 ci/planche.py essai/planche-bienvenue.jpg essai/bienvenue/etape-*.png || true
 
       - name: Envoyer les maquettes
         if: always()
