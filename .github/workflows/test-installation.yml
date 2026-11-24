@@ -44,6 +44,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Syntaxe des scripts (avant 40 min de test)
+        run: |
+          python3 -c 'import yaml' 2>/dev/null || { sudo apt-get update -qq; sudo apt-get install -y -qq python3-yaml >/dev/null; }
+          python3 ci/verifier-workflows.py .github/workflows/*.yml
+          python3 -c 'import ast; ast.parse(open("ci/cle/serie.py", encoding="utf-8").read())'
+
       - name: Faire de la place
         uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
 
@@ -158,8 +164,19 @@ jobs:
           python3 ci/vm/touches.py "${MON}" "texte:secureboot" ret; sleep 3
           python3 ci/vm/photo.py "${MON}" resultats/8-mok-fini.png
           python3 ci/vm/touches.py "${MON}" ret
-          for i in $(seq 80); do ${SSH} true 2>/dev/null && { echo "système installé joignable après $((i * 5)) s"; break; }; sleep 5; done
-          sleep 20
+          attendre_ssh() { for i in $(seq 120); do ${SSH} true 2>/dev/null && { echo "système installé joignable après $((i * 5)) s"; return 0; }; sleep 5; done; return 1; }
+          attendre_ssh || true
+          # Au 1er démarrage, Bazzite règle le matériel puis redémarre une fois tout seul (constaté en VM) :
+          # on attend un démarrage fini et stable (même numéro de démarrage 45 s plus tard).
+          for _ in 1 2 3; do
+            id1="$(timeout 600 ${SSH} -o ServerAliveInterval=5 -o ServerAliveCountMax=3 'systemctl is-system-running --wait >/dev/null; cat /proc/sys/kernel/random/boot_id' 2>/dev/null || true)"
+            sleep 45
+            id2="$(${SSH} cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
+            if [[ -n "${id1}" && "${id1}" == "${id2}" ]]; then echo "démarrage fini et stable"; break; fi
+            echo "redémarrage en cours (réglage du matériel par Bazzite au 1er démarrage), on attend"
+            attendre_ssh || true
+          done
+          sleep 15
           python3 ci/vm/photo.py "${MON}" resultats/9-systeme-installe.png
 
       - name: Vérifier le système installé
@@ -167,15 +184,22 @@ jobs:
           erreurs=0
           ok() { echo "OK      $*" | tee -a resultats/rapport.txt; }
           ko() { echo "ECHEC   $*" | tee -a resultats/rapport.txt; erreurs=$((erreurs + 1)); }
-          sb="$(${SSH} mokutil --sb-state 2>&1)"
-          if [[ "${sb}" == *"SecureBoot enabled"* ]]; then ok "le système installé démarre avec Secure Boot activé"; else ko "Secure Boot : ${sb:-pas de réponse (le système n'a pas démarré ?)}"; fi
-          cles="$(${SSH} mokutil --list-enrolled 2>&1 | grep -E 'Subject:|CN=' | head -4)"
+          # (pas d'apostrophe dans un ${x:-…} : bash la prend pour un guillemet)
+          sb="$(${SSH} mokutil --sb-state 2>&1 || true)"
+          [[ -n "${sb}" ]] || sb="pas de réponse (système pas démarré ?)"
+          if [[ "${sb}" == *"SecureBoot enabled"* ]]; then ok "le système installé démarre avec Secure Boot activé"; else ko "Secure Boot : ${sb}"; fi
+          cles="$(${SSH} mokutil --list-enrolled 2>&1 | grep -E 'Subject:|CN=' | head -4 || true)"
           if [[ -n "${cles}" ]]; then ok "clé Secure Boot de Thomas OS enregistrée (écran MOK) : $(echo "${cles}" | head -1 | xargs)"; else ko "aucune clé enregistrée par l'écran MOK"; fi
           if ${SSH} grep -q '^NAME="Thomas OS"' /usr/lib/os-release; then ok "c'est bien Thomas OS"; else ko "os-release"; fi
-          suivi="$(${SSH} rpm-ostree status --booted --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["deployments"][0].get("container-image-reference",""))')"
+          suivi="$(${SSH} rpm-ostree status --booted --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["deployments"][0].get("container-image-reference",""))' || true)"
           if [[ "${suivi}" == *thomas-os:${{ inputs.canal }}* ]]; then ok "mises à jour : suit ${suivi}"; else ko "image suivie : ${suivi:-?}"; fi
-          if ${SSH} systemctl is-active --quiet display-manager; then ok "écran de connexion lancé"; else ko "écran de connexion absent"; fi
-          ${SSH} systemctl --failed --no-legend --plain 2>/dev/null | awk '{print "INFO    service en échec : " $1}' | tee -a resultats/rapport.txt
+          cible="$(${SSH} systemctl get-default 2>/dev/null || true)"
+          if [[ "${cible}" == graphical.target ]]; then ok "démarre en mode graphique (${cible})"; else ko "mode de démarrage : ${cible:-?} (attendu graphical.target)"; fi
+          if ${SSH} systemctl is-active --quiet display-manager; then ok "écran de connexion lancé"; else
+            ko "écran de connexion absent"
+            ${SSH} systemctl status display-manager --no-pager 2>&1 | head -n 12 | sed 's/^/INFO    /' | tee -a resultats/rapport.txt || true
+          fi
+          ${SSH} systemctl --failed --no-legend --plain 2>/dev/null | awk '{print "INFO    service en échec : " $1}' | tee -a resultats/rapport.txt || true
           { echo "## Installation complète ($(basename "$(ls sortie/*.iso | head -1)"))"; echo '```'; cat resultats/rapport.txt; echo '```'; } >>"${GITHUB_STEP_SUMMARY}"
           exit $((erreurs > 0))
 

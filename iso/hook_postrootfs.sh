@@ -65,6 +65,10 @@ run0 --user=liveuser yad --timeout=0 --text-info --no-buttons --width=700 --heig
 # Le système installé = l'image Thomas OS copiée dans la clé (sans Internet), puis il suit le canal « ${canal} »
 ostreecontainer --url=${image}:${canal} --transport=containers-storage --no-signature-verification
 
+# Écran de connexion graphique au démarrage, imposé : sinon l'installateur le devine (lu dans son code,
+# pyanaconda/modules/services/installation.py) et il choisit le mode texte s'il ne trouve pas le paquet.
+xconfig --startxonboot
+
 %post --erroronfail --log=/tmp/thomas-os-journaux/canal.log
 bootc switch --mutate-in-place --transport registry ${image}:${canal}
 %end

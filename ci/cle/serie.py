@@ -123,6 +123,11 @@ def main():
     if s.commande("cp /usr/share/anaconda/interactive-defaults.ks /tmp/defaults-origine.ks && "
                   "base64 -d /tmp/ks.b64 >/tmp/test.ks && grep -q defaults-origine /tmp/test.ks") != 0:
         sys.exit("ECHEC : réponses de test mal copiées")
+    # Le vrai installateur est graphique ; sans interface, Anaconda règlerait le démarrage en mode texte.
+    # Les clés récentes l'imposent déjà (xconfig --startxonboot) ; pour les plus anciennes, le test l'ajoute.
+    if s.commande("grep -q startxonboot /tmp/defaults-origine.ks") != 0:
+        print("INFO    clé sans « xconfig --startxonboot » : ajouté pour le test", flush=True)
+        s.commande("echo 'xconfig --startxonboot' >>/tmp/test.ks")
     # Test seulement (copie en mémoire de la session live) : en mode « live », Anaconda ignore toujours un fichier
     # de réponses, et sans lui le disque n'est jamais choisi tout seul (lu dans pyanaconda/startup_utils.py).
     rc = s.commande("f=$(python3 -c 'import pyanaconda.startup_utils as m; print(m.__file__)') && "
@@ -138,7 +143,7 @@ def main():
                   "echo \"THOMAS-INSTALL: anaconda fini, code $?\" >/dev/ttyS0) </dev/null >/dev/null 2>&1 &") != 0:
         sys.exit("ECHEC : installateur pas lancé")
     debut = time.time()
-    m = s.chercher_depuis(r"THOMAS-INSTALL: (post fini[^\r\n]*|anaconda fini, code \d+)", depuis, 60 * 60)
+    m = s.chercher_depuis(r"THOMAS-INSTALL: (post fini[^\r\n]*?: \d+|anaconda fini, code \d+)", depuis, 60 * 60)
     duree = (time.time() - debut) / 60
     if m and m.group(1).startswith("post fini"):
         print(f"OK      installation finie en {duree:.0f} min ; {m.group(1)}", flush=True)
