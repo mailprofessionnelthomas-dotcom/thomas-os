@@ -243,13 +243,13 @@ Kirigami.ApplicationWindow {
                     QQC2.TabBar {
                         id: onglets
                         Layout.fillWidth: true
-                        QQC2.TabButton { text: "Couleurs"; width: implicitWidth }
-                        QQC2.TabButton { text: "Formes"; width: implicitWidth }
-                        QQC2.TabButton { text: "Barre"; width: implicitWidth }
-                        QQC2.TabButton { text: "Menu"; width: implicitWidth }
-                        QQC2.TabButton { text: "Fenêtres"; width: implicitWidth }
-                        QQC2.TabButton { text: "Bureau"; width: implicitWidth }
-                        QQC2.TabButton { text: "Texte"; width: implicitWidth }
+                        QQC2.TabButton { text: "Couleurs" }
+                        QQC2.TabButton { text: "Formes" }
+                        QQC2.TabButton { text: "Barre" }
+                        QQC2.TabButton { text: "Menu" }
+                        QQC2.TabButton { text: "Fenêtres" }
+                        QQC2.TabButton { text: "Bureau" }
+                        QQC2.TabButton { text: "Texte" }
                     }
 
                     StackLayout {

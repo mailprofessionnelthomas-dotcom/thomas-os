@@ -18,9 +18,10 @@ Window {
     title: "Thomas Studio : maquette"
     color: "black"
 
-    Apercu {
+    Apercu {  // taille fixe = l'écran : la fenêtre peut être rognée par le bureau, la photo de la maquette non
         id: apercu
-        anchors.fill: parent
+        width: ecranL
+        height: ecranH
         notification: true
         menuOuvert: fen.menuOuvert
         ecranL: fen.taille ? Number(fen.taille[1]) : (Screen.width > 0 ? Screen.width : 1920)

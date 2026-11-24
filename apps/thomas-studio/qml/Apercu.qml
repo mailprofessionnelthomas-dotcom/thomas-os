@@ -18,6 +18,12 @@ Item {
     readonly property real sx: ecranL / 1920
     readonly property real sy: ecranH / 1080
     clip: true
+    // les icônes de KDE (dossiers…) prennent les couleurs du style dessiné, pas celles du style actuel
+    Kirigami.Theme.inherit: false
+    Kirigami.Theme.colorSet: Kirigami.Theme.Window
+    Kirigami.Theme.highlightColor: principale
+    Kirigami.Theme.textColor: cTexte
+    Kirigami.Theme.backgroundColor: cFen
 
     readonly property var s: Studio.brouillon
     readonly property var cat: Studio.catalogue
