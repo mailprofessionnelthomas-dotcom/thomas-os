@@ -33,7 +33,10 @@ Kirigami.ApplicationWindow {
     Timer {
         running: fenetre.fichierCapture !== ""
         interval: 4000
-        onTriggered: fenetre.contentItem.grabToImage(r => Qt.exit(r.saveToFile(fenetre.fichierCapture) ? 0 : 1))
+        onTriggered: {
+            // la page (en-tête compris) : la racine de la fenêtre n'a pas de moteur QML, elle ne se photographie pas
+            if (!fenetre.pageStack.grabToImage(r => Qt.exit(r.saveToFile(fenetre.fichierCapture) ? 0 : 1))) Qt.exit(1)
+        }
     }
 
     Connections {

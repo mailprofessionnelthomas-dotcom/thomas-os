@@ -5,12 +5,14 @@
 set -uo pipefail
 if [[ -z "${DANS_DBUS:-}" ]]; then
     export HOME=/tmp/maison XDG_RUNTIME_DIR=/tmp/run LANG=C.UTF-8
-    mkdir -p "${HOME}/.local/share/dbus-1/services" "${XDG_RUNTIME_DIR}"
+    # dbus-daemon prend le dossier perso de root (pas $HOME) : le service est déclaré dans XDG_DATA_DIRS
+    export XDG_DATA_DIRS="/tmp/donnees:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+    mkdir -p "${HOME}" /tmp/donnees/dbus-1/services "${XDG_RUNTIME_DIR}"
     chmod 700 "${XDG_RUNTIME_DIR}"
     # Thomas Core démarré à la demande par D-Bus, avec le moteur et les styles du dépôt
     export THOMAS_STYLE_BIN=/depot/system_files/usr/bin/thomas-style THOMAS_STYLES_DIR=/depot/system_files/usr/share/thomas-os/styles
     printf '[D-BUS Service]\nName=org.thomasos.Core\nExec=/usr/bin/python3 /depot/system_files/usr/libexec/thomas-core\n' \
-        >"${HOME}/.local/share/dbus-1/services/org.thomasos.Core.service"
+        >/tmp/donnees/dbus-1/services/org.thomasos.Core.service
     export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_FORCE_STDERR_LOGGING=1 DANS_DBUS=1
     exec dbus-run-session -- bash "$0" "$@"
 fi

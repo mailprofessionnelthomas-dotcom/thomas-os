@@ -38,6 +38,6 @@ Window {
     Timer {  // le temps que le fond d'écran et les icônes soient chargés
         id: attente
         interval: 2000
-        onTriggered: apercu.grabToImage(r => Qt.exit(r.saveToFile(fen.fichierApercu) ? 0 : 1))
+        onTriggered: if (!apercu.grabToImage(r => Qt.exit(r.saveToFile(fen.fichierApercu) ? 0 : 1))) Qt.exit(1)
     }
 }
