@@ -83,6 +83,10 @@ Si tu as choisi « Continue boot » par erreur, Thomas OS ne démarre pas : c'es
 
 Pourquoi cet écran ? Le noyau de Thomas OS (celui de Bazzite) est signé par Universal Blue. Cette étape l'ajoute aux clés de confiance, sans désactiver Secure Boot.
 
+Photos de ces écrans (prises en VM) : `captures/vm/mok-1-menu.png` à `mok-4-reboot.png`.
+
+**Juste après :** au tout 1er démarrage, Thomas OS affiche « Preparing System », règle le matériel puis **redémarre une fois tout seul**. C'est normal. Ne touche à rien.
+
 ## 7. Ensuite
 
 - **Au démarrage :** un menu propose Thomas OS (par défaut) ou Windows.
