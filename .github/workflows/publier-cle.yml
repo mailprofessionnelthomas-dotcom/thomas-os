@@ -1,0 +1,124 @@
+---
+# Publie l'ISO d'un run « Clé USB (ISO) » dans une Release, découpée en morceaux de moins de 2 Go (limite de GitHub)
+# avec « Assembler-ISO.cmd » pour la recoller sous Windows.
+# - appelé par iso.yml après les tests (ISO de ce run) ;
+# - ou à la main sur l'ISO d'un run précédent : il vérifie alors que ses tests (démarrage Secure Boot et
+#   installation complète) sont verts, sinon il refuse.
+# Le tag est posé sur la tête de main (constaté : sur un commit plus ancien dont les workflows ont changé depuis,
+# GitHub refuse la création au jeton du workflow, « HTTP 403 Resource not accessible by integration »). Le commit
+# qui a fabriqué l'ISO est écrit dans les notes.
+name: Publier la clé USB
+on:
+  workflow_call:
+    inputs:
+      canal:
+        type: string
+        default: testing
+      variante:
+        type: string
+        default: thomas-os
+      run_id:
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Numéro du run « Clé USB (ISO) » dont l'ISO est publiée (ses tests doivent être verts)"
+        required: true
+      canal:
+        description: "Canal de cette ISO (testing ou stable)"
+        default: testing
+      variante:
+        description: "Variante de cette ISO"
+        default: thomas-os
+
+permissions:
+  contents: read
+
+jobs:
+  publier:
+    name: Publier (Release en morceaux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ISO: ${{ inputs.run_id || github.run_id }}
+      CANAL: ${{ inputs.canal }}
+      VARIANTE: ${{ inputs.variante }}
+    steps:
+      - name: Le run de cette ISO est-il testé et vert ?
+        run: |
+          [[ "${CANAL}" =~ ^(testing|stable)$ ]] || { echo "::error::canal inconnu : ${CANAL}"; exit 1; }
+          [[ "${VARIANTE}" =~ ^thomas-os(-nvidia|-nvidia-legacy)?$ ]] || { echo "::error::variante inconnue : ${VARIANTE}"; exit 1; }
+          [[ "${RUN_ISO}" =~ ^[0-9]+$ ]] || { echo "::error::numéro de run invalide : ${RUN_ISO}"; exit 1; }
+          nom_wf="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ISO}" --jq '.name')"
+          [[ "${nom_wf}" == "Clé USB (ISO)" ]] || { echo "::error::le run ${RUN_ISO} n'est pas un run « Clé USB (ISO) » (${nom_wf})"; exit 1; }
+          jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ISO}/jobs?per_page=50" --jq '.jobs[] | "\(.conclusion) | \(.name)"')"
+          echo "${jobs}"
+          for job in "Démarrer la clé avec Secure Boot" "Installer pour de vrai"; do
+            grep -q "^success | .*${job}" <<<"${jobs}" || { echo "::error::test « ${job} » pas vert dans le run ${RUN_ISO} : publication refusée"; exit 1; }
+          done
+          {
+            echo "SHA_ISO=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ISO}" --jq '.head_sha')"
+            echo "NUMERO_ISO=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ISO}" --jq '.run_number')"
+          } >>"${GITHUB_ENV}"
+
+      - name: Récupérer l'ISO
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: iso
+          path: sortie
+          run-id: ${{ inputs.run_id || github.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Découper + Assembler-ISO.cmd
+        run: |
+          NOM="$(basename "$(ls sortie/*.iso | head -1)")"
+          VERSION="$(sed -nE "s/^${VARIANTE}-${CANAL}-(.+)\.iso$/\1/p" <<<"${NOM}")"
+          [[ -n "${VERSION}" ]] || { echo "::error::ISO « ${NOM} » : pas une ${VARIANTE} du canal ${CANAL}"; exit 1; }
+          { echo "NOM=${NOM}"; echo "VERSION=${VERSION}"; } >>"${GITHUB_ENV}"
+          mkdir -p cle
+          (cd sortie && sha256sum -c SHA256SUMS)
+          somme="$(cut -d' ' -f1 sortie/SHA256SUMS)"
+          split -b 1900M -d -a 2 "sortie/${NOM}" "cle/${NOM}.part"
+          parts=(); for p in cle/*.part*; do parts+=("\"$(basename "${p}")\""); done
+          liste="$(IFS=+; echo "${parts[*]}")"
+          {
+            echo '@echo off'
+            echo 'chcp 65001 >nul'
+            echo 'cd /d "%~dp0"'
+            echo 'echo Thomas OS : assemblage de la clé USB (quelques minutes)...'
+            echo "copy /b ${liste} \"${NOM}\" >nul"
+            echo 'if errorlevel 1 (echo ERREUR : un morceau manque, retélécharge-les tous dans le même dossier. & pause & exit /b 1)'
+            echo 'echo Vérification du fichier...'
+            echo "certutil -hashfile \"${NOM}\" SHA256 | findstr /i \"${somme}\" >nul"
+            echo "if errorlevel 1 (echo ERREUR : le fichier est abîmé, retélécharge les morceaux. & pause & exit /b 1)"
+            echo "echo OK : ${NOM} est complet et intact. Tu peux supprimer les fichiers .part."
+            echo 'pause'
+          } | sed 's/$/\r/' >cle/Assembler-ISO.cmd
+          cp sortie/SHA256SUMS cle/
+          ls -lh cle/
+
+      - name: Release
+        run: |
+          tag="cle-usb-${VARIANTE}-${CANAL}-${VERSION}-n${NUMERO_ISO}"
+          {
+            echo "Clé USB de Thomas OS **${VERSION}** (${VARIANTE}, canal ${CANAL}). Testée dans une machine virtuelle avec Secure Boot activé : démarrage de la clé, installation complète, écran MOK, puis 1er démarrage du système installé."
+            echo
+            echo "1. Télécharge **tous** les fichiers \`.part\` et \`Assembler-ISO.cmd\` dans un même dossier."
+            echo "2. Double-clique sur \`Assembler-ISO.cmd\` : il recolle \`${NOM}\` et vérifie qu'il est intact."
+            echo "3. Écris l'ISO sur une clé USB avec un outil graphique, puis installe : guide pas à pas dans [docs/INSTALLATION.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/INSTALLATION.md)."
+            echo
+            echo "Empreinte SHA-256 de l'ISO : \`$(cut -d' ' -f1 cle/SHA256SUMS)\`"
+            echo
+            echo "Fabriquée et testée par le run [${NUMERO_ISO}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${RUN_ISO}), depuis le commit ${SHA_ISO:0:7}."
+          } >notes.md
+          gh release create "${tag}" cle/* --title "Clé USB Thomas OS ${VERSION} (${CANAL})" --notes-file notes.md
+          echo "Release : https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}" | tee -a "${GITHUB_STEP_SUMMARY}"

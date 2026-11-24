@@ -33,6 +33,7 @@ on:
       - 'ci/verifier-workflows.py'
       - '.github/workflows/test-installation.yml'
       - '.github/workflows/inspecter.yml'
+      - '.github/workflows/publier-cle.yml'
   workflow_dispatch:
 
 env:
