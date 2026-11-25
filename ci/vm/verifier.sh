@@ -422,7 +422,24 @@ EOF
     comme_testeur kde-open "${tele}/SteamSetup.exe" </dev/null >/tmp/kde-open.log 2>&1 &
     for _ in $(seq 30); do pgrep -u testeur -f 'thomas-installateur.*SteamSetup' >/dev/null && break; sleep 1; done
     if pgrep -u testeur -f 'thomas-installateur.*SteamSetup' >/dev/null; then ok "double-clic sur SteamSetup.exe : l'installateur Thomas OS s'ouvre"
-    else ko "double-clic sur un .exe : installateur pas lancé ($(tr '\n' ' ' </tmp/kde-open.log | head -c 300))"; fi
+    else
+        ko "double-clic sur un .exe : installateur pas lancé ($(tr '\n' ' ' </tmp/kde-open.log | head -c 300))"
+        # diagnostic : ce que KDE voit (type du fichier, appli préférée, dossiers de config), et le lancement en détail
+        info "kde-open encore là : $(pgrep -u testeur -a kde-open | head -2 | tr '\n' ' ')"
+        info "fenêtres ouvertes : $(pgrep -u testeur -a -f 'kde-open|kioclient|thomas-installateur|kdialog|ark' | grep -v pgrep | tr '\n' ' ' | head -c 400)"
+        for c in kmimetypefinder6 kmimetypefinder; do command -v "${c}" >/dev/null && info "${c} : $(comme_testeur "${c}" "${tele}/SteamSetup.exe" </dev/null 2>&1 | head -2 | tr '\n' ' ')"; done
+        for c in ktraderclient6 ktraderclient; do command -v "${c}" >/dev/null && info "${c} : $(comme_testeur "${c}" --mimetype application/x-msdownload </dev/null 2>&1 | grep -iE 'DesktopEntryPath|Name' | head -6 | tr '\n' ' ')"; done
+        info "session : $(tr '\0' '\n' <"/proc/$(pgrep -u testeur -x plasmashell | head -1)/environ" | grep -E '^XDG_(CONFIG|DATA)_DIRS=' | tr '\n' ' ')"
+        for f in /etc/xdg/kde-mimeapps.list /usr/share/kde-settings/kde-profile/default/xdg/kde-mimeapps.list "${maison}/.config/mimeapps.list" "${maison}/.config/kde-mimeapps.list"; do
+            [[ -f "${f}" ]] && info "${f} : $(grep -ciE 'msdownload|x-msi|debian|x-rpm|appimage' "${f}") lignes exe/msi/deb/rpm/appimage ; $(grep -iE 'msdownload' "${f}" | head -2 | tr '\n' ' ')"
+        done
+        comme_testeur env QT_LOGGING_RULES='kf.kio.*=true;kf.service.*=true' QT_FORCE_STDERR_LOGGING=1 timeout 25 kde-open "${tele}/SteamSetup.exe" </dev/null >/tmp/kde-open-diag.log 2>&1
+        info "kde-open détaillé (code $?) :"
+        grep -vE '^\s*$' /tmp/kde-open-diag.log | tail -25 | sed 's/^/INFO      /'
+        sleep 3
+        info "après : $(pgrep -u testeur -a -f 'thomas-installateur|kdialog' | grep -v pgrep | tr '\n' ' ' | head -c 300)"
+        journalctl _UID="$(id -u testeur)" --since '-3min' --no-pager 2>/dev/null | grep -iE 'installateur|kde-open|kio|desktop' | tail -12 | sed 's/^/INFO    journal : /'
+    fi
     for _ in $(seq 15); do pgrep -u testeur -x kdialog >/dev/null && break; sleep 1; done
     if pgrep -u testeur -x kdialog >/dev/null; then ok "fenêtre de l'installateur affichée (photo 11)"; else ko "pas de fenêtre de l'installateur"; fi
     grep -h 'fichier :' "${maison}/.cache/thomas-os/installateur.log" 2>/dev/null | tail -1 | sed 's/^/INFO    /'

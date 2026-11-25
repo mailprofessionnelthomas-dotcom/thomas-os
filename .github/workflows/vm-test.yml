@@ -195,18 +195,22 @@ jobs:
       # Installateur Thomas OS : double-clic sur un fichier téléchargé (.exe, .deb, .msi, .AppImage), comme sur Windows
       - name: Installateur (double-clic, Steam, Epic, AppImage)
         run: |
-          bash ci/vm/dans-la-vm.sh installateur-ouvrir | tee -a resultats/rapport.txt
+          echec=0
+          bash ci/vm/dans-la-vm.sh installateur-ouvrir | tee -a resultats/rapport.txt || echec=1
           sleep 2
           python3 ci/vm/photo.py /tmp/qemu-mon resultats/11-installateur-steam.png
-          bash ci/vm/dans-la-vm.sh installateur | tee -a resultats/rapport.txt
+          bash ci/vm/dans-la-vm.sh installateur | tee -a resultats/rapport.txt || echec=1
+          exit "${echec}"
 
       - name: Installateur, vraie installation depuis la boutique (information)
+        if: ${{ !cancelled() }}
         continue-on-error: true
         timeout-minutes: 20
         run: bash ci/vm/dans-la-vm.sh installateur-boutique | tee -a resultats/rapport.txt
 
       # Un faux installateur Windows (compilé ici, jamais sur un PC) : Proton téléchargé, raccourci du menu, relancé
       - name: Installateur, programme Windows avec Proton (information)
+        if: ${{ !cancelled() }}
         continue-on-error: true
         timeout-minutes: 35
         run: |
