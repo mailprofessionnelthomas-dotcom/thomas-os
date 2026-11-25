@@ -151,6 +151,14 @@ def main():
         print(f"INFO    installateur terminé (code {fin.group(1) if fin else '?'})", flush=True)
         s.commande("cat /tmp/yad.log 2>/dev/null | sed 's/^/INFO    fenêtre : /'", 30)
         s.commande("tail -n 15 /tmp/thomas-os-journaux/*.log", 60)
+        # Test seulement : la console série ajoutée pour ce test (console=ttyS0, recopiée par l'installateur) fait
+        # passer le logo de démarrage (Plymouth) en mode texte ; un vrai PC n'en a pas. On le dit à Plymouth, pour
+        # photographier le vrai logo au 1er démarrage (constaté : texte qui défile sinon).
+        rc = s.commande("m=$(mktemp -d) && mount LABEL=bazzite_xboot \"$m\" && "
+                        "sed -i '/^options /s/$/ plymouth.ignore-serial-consoles/' \"$m\"/loader/entries/*.conf && "
+                        "grep -q ignore-serial-consoles \"$m\"/loader/entries/*.conf; r=$?; umount \"$m\"; (exit $r)", 60)
+        print(f"INFO    test : plymouth.ignore-serial-consoles {'ajouté' if rc == 0 else 'PAS ajouté'} "
+              "(console série du test seulement)", flush=True)
         s.commande("sync", 120)
         # comme « Éteindre » après l'installation ; GitHub redémarre ensuite sur le disque.
         # On lit la console pendant l'arrêt : si quelque chose bloque, ses messages restent dans le journal.
