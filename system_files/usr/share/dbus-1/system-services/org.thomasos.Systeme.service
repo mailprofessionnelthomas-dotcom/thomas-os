@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=org.thomasos.Systeme
+Exec=/usr/libexec/thomas-systeme
+User=root
+SystemdService=thomas-systeme.service

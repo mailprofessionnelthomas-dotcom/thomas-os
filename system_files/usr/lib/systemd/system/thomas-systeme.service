@@ -1,0 +1,9 @@
+[Unit]
+Description=Thomas OS : aide système (canal de mises à jour, variante, redémarrer sur Windows)
+Documentation=https://github.com/mailprofessionnelthomas-dotcom/thomas-os/blob/main/docs/ARCHITECTURE.md
+
+[Service]
+# Lancé à la demande par D-Bus (org.thomasos.Systeme) ; s'arrête seul quand il n'a plus rien à faire
+Type=dbus
+BusName=org.thomasos.Systeme
+ExecStart=/usr/libexec/thomas-systeme

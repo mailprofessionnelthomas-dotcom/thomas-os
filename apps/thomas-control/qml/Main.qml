@@ -121,4 +121,11 @@ Kirigami.ApplicationWindow {
 
     // page d'accueil déclarée ici (et non créée à partir d'un fichier) : elle n'est jamais orpheline
     pageStack.initialPage: PageAccueil {}
+
+    // --page NOM : ouvre directement cette catégorie (ex. « systeme » depuis Thomas Welcome)
+    property string pageDepart
+    Component.onCompleted: {
+        const c = fenetre.categories.find(x => x.page === fenetre.pageDepart)
+        if (c) Qt.callLater(fenetre.ouvrir, c)
+    }
 }

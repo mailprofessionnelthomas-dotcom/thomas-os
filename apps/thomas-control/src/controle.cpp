@@ -13,6 +13,10 @@ namespace
 {
 const QString SERVICE = QStringLiteral("org.thomasos.Core");
 const QString CHEMIN = QStringLiteral("/org/thomasos/Core");
+// aide système (bus système, root) : canal, variante, redémarrer sur Windows
+const QString SYSTEME = QStringLiteral("org.thomasos.Systeme");
+const QString CHEMIN_SYSTEME = QStringLiteral("/org/thomasos/Systeme");
+const QString IFACE_SYSTEME = QStringLiteral("org.thomasos.Systeme1");
 const QStringList DOSSIERS_KCM = {QStringLiteral("/usr/lib64/qt6/plugins/plasma/kcms/systemsettings"),
                                   QStringLiteral("/usr/lib64/qt6/plugins/plasma/kcms/systemsettings_qwidgets"),
                                   QStringLiteral("/usr/lib64/qt6/plugins/plasma/kcms")};
@@ -36,7 +40,86 @@ Controle::Controle(QObject *parent)
 {
     QDBusConnection::sessionBus().connect(SERVICE, CHEMIN, QStringLiteral("org.thomasos.Style1"), QStringLiteral("StyleChange"),
                                           this, SLOT(actualiser()));
+    QDBusConnection::systemBus().connect(SYSTEME, CHEMIN_SYSTEME, IFACE_SYSTEME, QStringLiteral("Progression"), this,
+                                         SLOT(surProgression(QString, QString)));
+    QDBusConnection::systemBus().connect(SYSTEME, CHEMIN_SYSTEME, IFACE_SYSTEME, QStringLiteral("Fini"), this,
+                                         SLOT(surFini(QString, bool, QString)));
     actualiser();
+}
+
+void Controle::actualiserSysteme()
+{
+    auto msg = QDBusMessage::createMethodCall(SYSTEME, CHEMIN_SYSTEME, IFACE_SYSTEME, QStringLiteral("Etat"));
+    auto *veilleur = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(msg, 60000), this);
+    connect(veilleur, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
+        const QDBusMessage rep = w->reply();
+        w->deleteLater();
+        if (rep.type() == QDBusMessage::ErrorMessage) {
+            m_systeme.clear();
+        } else {
+            m_systeme = rep.arguments().isEmpty() ? QVariantMap() : dicoTexte(rep.arguments().first());
+            if (m_systeme.value(QStringLiteral("travail")).toString().isEmpty()) {
+                m_progressionSysteme.clear();
+            }
+        }
+        Q_EMIT systemeChanged();
+    });
+}
+
+void Controle::appelerSysteme(const QString &methode, const QVariantList &args)
+{
+    auto msg = QDBusMessage::createMethodCall(SYSTEME, CHEMIN_SYSTEME, IFACE_SYSTEME, methode);
+    msg.setArguments(args);
+    msg.setInteractiveAuthorizationAllowed(true);
+    m_attenteSysteme = true;
+    Q_EMIT systemeChanged();
+    // 10 min : le temps de taper le mot de passe administrateur dans la fenêtre de KDE (polkit)
+    auto *veilleur = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(msg, 600000), this);
+    connect(veilleur, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
+        const QDBusMessage rep = w->reply();
+        w->deleteLater();
+        m_attenteSysteme = false;
+        if (rep.type() == QDBusMessage::ErrorMessage) {
+            Q_EMIT erreur(rep.errorMessage());
+        } else {
+            Q_EMIT message(rep.arguments().value(0).toString());
+        }
+        actualiserSysteme();
+    });
+}
+
+void Controle::changerCanal(const QString &canal)
+{
+    appelerSysteme(QStringLiteral("ChangerCanal"), {canal});
+}
+
+void Controle::changerVariante(const QString &variante)
+{
+    appelerSysteme(QStringLiteral("ChangerVariante"), {variante});
+}
+
+void Controle::redemarrerWindows()
+{
+    appelerSysteme(QStringLiteral("RedemarrerWindows"), {true});
+}
+
+void Controle::surProgression(const QString &action, const QString &ligne)
+{
+    Q_UNUSED(action)
+    m_progressionSysteme = ligne;
+    Q_EMIT systemeChanged();
+}
+
+void Controle::surFini(const QString &action, bool ok, const QString &texte)
+{
+    Q_UNUSED(action)
+    m_progressionSysteme.clear();
+    if (ok) {
+        Q_EMIT message(texte);
+    } else {
+        Q_EMIT erreur(texte);
+    }
+    actualiserSysteme();
 }
 
 void Controle::appelerCore(const QString &interface, const QString &methode, const QVariantList &args,

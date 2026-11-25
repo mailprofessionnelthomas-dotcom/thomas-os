@@ -1,0 +1,300 @@
+#!/usr/bin/python3
+"""Thomas OS : aide système (bus D-Bus système, root) pour les rares actions qui exigent l'administrateur.
+
+  org.thomasos.Systeme, /org/thomasos/Systeme, interface org.thomasos.Systeme1 :
+    Etat() → a{ss}                  canal, variante, image suivie, changement en attente, travail en cours, Windows
+    ChangerCanal(s canal) → s       testing ou stable (bootc switch, appliqué au prochain redémarrage)
+    ChangerVariante(s variante) → s thomas-os, thomas-os-nvidia ou thomas-os-nvidia-legacy (idem)
+    RedemarrerWindows(b maintenant) → s   démarrage suivant sur « Windows Boot Manager » (UEFI BootNext)
+    signaux Progression(s action, s ligne) et Fini(s action, b ok, s message)
+
+Chaque action demande l'autorisation à polkit (actions org.thomasos.systeme.*) : la fenêtre du mot de passe
+administrateur de KDE s'ouvre si besoin. Pas de commande libre : 2 canaux et 3 variantes possibles, toujours dans le
+registre de Thomas OS (info.env). Lancé à la demande par D-Bus ; s'arrête seul après 60 s sans appel ni travail.
+"""
+import collections
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+from gi.repository import Gio, GLib
+
+NOM = "org.thomasos.Systeme"
+CHEMIN = "/org/thomasos/Systeme"
+IFACE = "org.thomasos.Systeme1"
+ERREUR = "org.thomasos.Systeme.Erreur"
+REFUSE = "org.thomasos.Systeme.Refuse"
+INFO_ENV = Path(os.environ.get("THOMAS_INFO_ENV", "/usr/share/thomas-os/info.env"))
+INACTIF_S = int(os.environ.get("THOMAS_SYSTEME_INACTIF", "60"))
+CANAUX = ("testing", "stable")
+VARIANTES = ("thomas-os", "thomas-os-nvidia", "thomas-os-nvidia-legacy")
+
+XML = """<node>
+  <interface name="org.thomasos.Systeme1">
+    <method name="Etat"><arg type="a{ss}" direction="out"/></method>
+    <method name="ChangerCanal"><arg name="canal" type="s" direction="in"/><arg type="s" direction="out"/></method>
+    <method name="ChangerVariante"><arg name="variante" type="s" direction="in"/><arg type="s" direction="out"/></method>
+    <method name="RedemarrerWindows"><arg name="maintenant" type="b" direction="in"/><arg type="s" direction="out"/></method>
+    <signal name="Progression"><arg name="action" type="s"/><arg name="ligne" type="s"/></signal>
+    <signal name="Fini"><arg name="action" type="s"/><arg name="ok" type="b"/><arg name="message" type="s"/></signal>
+  </interface>
+</node>"""
+
+
+class Erreur(Exception):
+    pass
+
+
+def lire_env():
+    infos = {}
+    if INFO_ENV.exists():
+        for ligne in INFO_ENV.read_text(encoding="utf-8").splitlines():
+            if "=" in ligne:
+                k, v = ligne.split("=", 1)
+                infos[k.replace("THOMAS_OS_", "").lower()] = v
+    return infos
+
+
+def registre():
+    """« ghcr.io/propriétaire/ » : le seul endroit d'où l'aide système accepte une image."""
+    ref = lire_env().get("image_ref", "")
+    if not re.fullmatch(r"[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)+", ref):
+        raise Erreur("Image de Thomas OS inconnue (info.env) : changement impossible")
+    return ref.rsplit("/", 1)[0] + "/"
+
+
+def statut_bootc():
+    try:
+        r = subprocess.run(["bootc", "status", "--format", "json"], capture_output=True, text=True, timeout=60)
+        st = json.loads(r.stdout or "{}").get("status") or {}
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        st = {}
+
+    def image(d):
+        return (((d or {}).get("image") or {}).get("image") or {}).get("image", "")
+
+    return image(st.get("booted")), image(st.get("staged"))
+
+
+def entrees_efi():
+    """Entrées de démarrage UEFI : [(numéro, nom, chemin)] ; vide si le PC n'est pas en UEFI."""
+    if not Path("/sys/firmware/efi").is_dir():
+        return []
+    try:
+        sortie = subprocess.run(["efibootmgr", "-v"], capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    entrees = []
+    for ligne in sortie.splitlines():
+        m = re.match(r"^Boot([0-9A-Fa-f]{4})\*?\s+(.*)$", ligne)
+        if m:
+            nom, _, chemin = m.group(2).partition("\t")
+            entrees.append((m.group(1).upper(), nom.strip(), chemin.strip()))
+    return entrees
+
+
+def entree_windows():
+    for num, nom, chemin in entrees_efi():
+        if "windows boot manager" in nom.lower() or "bootmgfw.efi" in chemin.lower():
+            return num, nom
+    return None
+
+
+class Service:
+    def __init__(self):
+        self.boucle = GLib.MainLoop()
+        self.minuterie = None
+        self.conn = None
+        self.travail = ""  # action en cours (une seule à la fois)
+        self.attentes = 0  # autorisations polkit en attente (mot de passe en train d'être tapé)
+        self.rearmer()
+
+    def rearmer(self):
+        if self.minuterie:
+            GLib.source_remove(self.minuterie)
+        self.minuterie = GLib.timeout_add_seconds(INACTIF_S, self.inactif)
+
+    def inactif(self):
+        if self.travail or self.attentes:
+            return True  # on garde le service tant qu'il travaille
+        self.boucle.quit()
+        return False
+
+    def signal(self, nom, valeur):
+        self.conn.emit_signal(None, CHEMIN, IFACE, nom, valeur)
+
+    # --- autorisation ---------------------------------------------------------------------------------------------
+    def autoriser(self, expediteur, action, invocation, suite):
+        """Appelle suite() si l'appelant a le droit (root, ou polkit d'accord), sinon répond une erreur."""
+        try:
+            uid = self.conn.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                                      "GetConnectionUnixUser", GLib.Variant("(s)", (expediteur,)),
+                                      GLib.VariantType("(u)"), Gio.DBusCallFlags.NONE, 5000, None).unpack()[0]
+        except GLib.Error as e:
+            invocation.return_dbus_error(ERREUR, f"Appelant inconnu : {e.message}")
+            return
+        if uid == 0:  # comme systemd : root n'a pas besoin de polkit
+            self.repondre(invocation, suite)
+            return
+        sujet = ("system-bus-name", {"name": GLib.Variant("s", expediteur)})
+        self.attentes += 1
+
+        def reponse(conn, res):
+            self.attentes -= 1
+            self.rearmer()
+            try:
+                ok = conn.call_finish(res).unpack()[0][0]
+            except GLib.Error as e:
+                invocation.return_dbus_error(ERREUR, f"Autorisation impossible : {e.message}")
+                return
+            if not ok:
+                invocation.return_dbus_error(REFUSE, "Autorisation refusée (mot de passe administrateur nécessaire)")
+                return
+            self.repondre(invocation, suite)
+
+        # 1 = l'utilisateur peut être interrogé (fenêtre du mot de passe de KDE) ; 10 min pour la remplir
+        self.conn.call("org.freedesktop.PolicyKit1", "/org/freedesktop/PolicyKit1/Authority",
+                       "org.freedesktop.PolicyKit1.Authority", "CheckAuthorization",
+                       GLib.Variant("((sa{sv})sa{ss}us)", (sujet, action, {}, 1, "")),
+                       GLib.VariantType("((bba{ss}))"), Gio.DBusCallFlags.NONE, 600000, None, reponse)
+
+    def repondre(self, invocation, suite):
+        try:
+            invocation.return_value(GLib.Variant("(s)", (suite(),)))
+        except Erreur as e:
+            invocation.return_dbus_error(ERREUR, str(e))
+
+    # --- actions ----------------------------------------------------------------------------------------------------
+    def etat(self):
+        suivie, attente = statut_bootc()
+        env = lire_env()
+        win = entree_windows()
+        return {"canal": suivie.rsplit(":", 1)[-1] if ":" in suivie.rsplit("/", 1)[-1] else "?",
+                "variante": env.get("image_name", "?"), "gpu_variant": env.get("gpu_variant", "?"),
+                "image_suivie": suivie or "?", "en_attente": attente, "travail": self.travail,
+                "windows": "oui" if win else "non", "windows_nom": win[1] if win else ""}
+
+    def basculer(self, action, variante, canal):
+        """bootc switch vers registre/variante:canal, en fond ; Progression puis Fini à la fin."""
+        if self.travail:
+            raise Erreur(f"Une autre opération est déjà en cours ({self.travail})")
+        cible = f"{registre()}{variante}:{canal}"
+        suivie, attente = statut_bootc()
+        if cible in (suivie, attente):
+            return f"Rien à faire : {cible} est déjà {'suivie' if cible == suivie else 'prête'}"
+        try:
+            proc = subprocess.Popen(["bootc", "switch", cible], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        except OSError as e:
+            raise Erreur(f"bootc introuvable : {e}") from e
+        self.travail = action
+        lignes = collections.deque(maxlen=12)
+        dernier = [0.0]
+        tampon = [b""]
+
+        def lire(source, condition):
+            morceau = os.read(proc.stdout.fileno(), 65536) if condition & GLib.IOCondition.IN else b""
+            if morceau:
+                tampon[0] += morceau
+                *completes, tampon[0] = re.split(rb"[\r\n]", tampon[0])
+                for brut in completes:
+                    ligne = brut.decode("utf-8", "replace").strip()
+                    if ligne:
+                        lignes.append(ligne)
+                        if time.monotonic() - dernier[0] > 1:  # au plus une ligne par seconde vers l'appli
+                            dernier[0] = time.monotonic()
+                            self.signal("Progression", GLib.Variant("(ss)", (action, ligne[:300])))
+                return True
+            code = proc.wait()
+            reste = tampon[0].decode("utf-8", "replace").strip()
+            if reste:
+                lignes.append(reste)
+            self.travail = ""
+            self.rearmer()
+            if code == 0:
+                msg = f"Prêt : {cible} s'appliquera au prochain redémarrage."
+            else:
+                msg = f"Échec ({code}) : " + " / ".join(list(lignes)[-3:])
+            self.signal("Fini", GLib.Variant("(sbs)", (action, code == 0, msg)))
+            return False
+
+        GLib.io_add_watch(GLib.IOChannel.unix_new(proc.stdout.fileno()), GLib.PRIORITY_DEFAULT,
+                          GLib.IOCondition.IN | GLib.IOCondition.HUP | GLib.IOCondition.ERR, lire)
+        return f"Téléchargement de {cible} lancé (quelques minutes)"
+
+    def changer_canal(self, canal):
+        if canal not in CANAUX:
+            raise Erreur(f"Canal inconnu : {canal} (testing ou stable)")
+        return self.basculer("canal", lire_env().get("image_name", "thomas-os"), canal)
+
+    def changer_variante(self, variante):
+        if variante not in VARIANTES:
+            raise Erreur(f"Variante inconnue : {variante}")
+        suivie, _ = statut_bootc()
+        canal = suivie.rsplit(":", 1)[-1] if ":" in suivie.rsplit("/", 1)[-1] else ""
+        return self.basculer("variante", variante, canal if canal in CANAUX else "stable")
+
+    def redemarrer_windows(self, maintenant):
+        win = entree_windows()
+        if not win:
+            raise Erreur("Windows introuvable dans les entrées de démarrage UEFI de ce PC")
+        r = subprocess.run(["efibootmgr", "--bootnext", win[0]], capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            raise Erreur(f"Démarrage suivant non réglé : {(r.stderr or r.stdout).strip()[:200]}")
+        if maintenant:
+            subprocess.Popen(["systemctl", "reboot"])
+            return f"Redémarrage sur {win[1]}"
+        return f"Le prochain démarrage se fera sur {win[1]} (une seule fois)"
+
+    def appel(self, conn, expediteur, chemin, interface, methode, params, invocation):
+        self.rearmer()
+        try:
+            if methode == "Etat":
+                invocation.return_value(GLib.Variant("(a{ss})", (self.etat(),)))
+            elif methode == "ChangerCanal":
+                canal = params.unpack()[0]
+                if canal not in CANAUX:  # refusé avant de demander le mot de passe
+                    raise Erreur(f"Canal inconnu : {canal} (testing ou stable)")
+                self.autoriser(expediteur, "org.thomasos.systeme.canal", invocation, lambda: self.changer_canal(canal))
+            elif methode == "ChangerVariante":
+                variante = params.unpack()[0]
+                if variante not in VARIANTES:
+                    raise Erreur(f"Variante inconnue : {variante}")
+                self.autoriser(expediteur, "org.thomasos.systeme.variante", invocation,
+                               lambda: self.changer_variante(variante))
+            elif methode == "RedemarrerWindows":
+                maintenant = bool(params.unpack()[0])
+                self.autoriser(expediteur, "org.thomasos.systeme.windows", invocation,
+                               lambda: self.redemarrer_windows(maintenant))
+            else:
+                raise Erreur(f"méthode inconnue : {methode}")
+        except Erreur as e:
+            invocation.return_dbus_error(ERREUR, str(e))
+
+    def lancer(self):
+        noeud = Gio.DBusNodeInfo.new_for_xml(XML)
+
+        def acquis(conn, nom):
+            self.conn = conn
+            conn.register_object(CHEMIN, noeud.interfaces[0], self.appel, None, None)
+
+        Gio.bus_own_name(Gio.BusType.SYSTEM, NOM, Gio.BusNameOwnerFlags.NONE, acquis, None,
+                         lambda *_: self.boucle.quit())
+        self.boucle.run()
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--test":  # sans D-Bus (build) : ce que le service répondrait
+        print(json.dumps({"registre": registre(), "windows": entree_windows(), "canaux": CANAUX,
+                          "variantes": VARIANTES}, ensure_ascii=False))
+        for mauvais in ("testing; rm -rf /", "../x", ""):
+            try:
+                Service.changer_canal(None, mauvais)
+                raise SystemExit(f"ERREUR : canal « {mauvais} » accepté")
+            except Erreur:
+                pass
+        sys.exit(0)
+    Service().lancer()

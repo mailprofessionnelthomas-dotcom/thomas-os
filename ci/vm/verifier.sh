@@ -328,12 +328,60 @@ control-pages)
     e="$(grep -iE 'qml|error|warning' /tmp/control-pages.log | grep -v 'Qt Quick Layouts' | sort -u | tail -8)"
     if [[ -z "${e}" ]]; then ok "aucune erreur QML dans les pages de Thomas Control"; else ko "messages des pages de Thomas Control :"; echo "${e}" | sed 's/^/INFO    /'; fi
     ;;
+systeme)
+    # Aide système (bus système, root, polkit) : lancée à la demande, entrées piégées refusées, polkit actif pour un
+    # utilisateur sans mot de passe, « redémarrer sur Windows » sur une fausse entrée UEFI (créée hors de l'ordre de
+    # démarrage, puis supprimée).
+    aide() { busctl --system --json=short call org.thomasos.Systeme /org/thomasos/Systeme org.thomasos.Systeme1 "$@" 2>&1; }
+    champ() { python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["data"][0].get(sys.argv[1], "?"))' "$1" 2>/dev/null; }
+    etat="$(aide Etat)"
+    if [[ "${etat}" == *'"canal"'* ]]; then
+        ok "aide système lancée à la demande : canal $(champ canal <<<"${etat}"), variante $(champ variante <<<"${etat}"), Windows $(champ windows <<<"${etat}")"
+    else ko "aide système : ${etat}"; fi
+    r="$(aide ChangerCanal s 'stable; reboot')"
+    if [[ "${r}" == *"Canal inconnu"* ]]; then ok "entrée piégée refusée (canal « stable; reboot »)"; else ko "entrée piégée : ${r}"; fi
+    r="$(aide ChangerVariante s '../autre-image')"
+    if [[ "${r}" == *"Variante inconnue"* ]]; then ok "entrée piégée refusée (variante « ../autre-image »)"; else ko "variante piégée : ${r}"; fi
+    r="$(runuser -u testeur -- busctl --system call org.thomasos.Systeme /org/thomasos/Systeme org.thomasos.Systeme1 ChangerCanal s stable 2>&1)"
+    if [[ "${r}" == *"Autorisation refusée"* ]]; then ok "polkit : un utilisateur sans mot de passe administrateur est refusé"; else ko "polkit : ${r}"; fi
+    if [[ -d /sys/firmware/efi ]]; then
+        avant="$(efibootmgr | grep -E '^BootOrder' || true)"
+        disque="/dev/$(lsblk -no PKNAME "$(findmnt -no SOURCE /boot/efi 2>/dev/null || findmnt -no SOURCE /boot)" 2>/dev/null | head -1)"
+        [[ -b "${disque}" ]] || disque=/dev/vda
+        efibootmgr -q -C -d "${disque}" -p 1 -L "Windows Boot Manager" -l '\EFI\Microsoft\Boot\bootmgfw.efi' >/dev/null 2>&1
+        num="$(efibootmgr | sed -nE 's/^Boot([0-9A-F]{4})\*? Windows Boot Manager.*/\1/p' | head -1)"
+        if [[ -n "${num}" ]]; then
+            etat="$(aide Etat)"
+            if [[ "$(champ windows <<<"${etat}")" == oui ]]; then ok "Windows détecté dans les entrées UEFI (fausse entrée Boot${num})"; else ko "Windows pas détecté : ${etat}"; fi
+            r="$(aide RedemarrerWindows b false)"
+            if efibootmgr | grep -q "^BootNext: ${num}"; then ok "« redémarrer sur Windows » : démarrage suivant réglé sur Boot${num} (${r})"; else ko "BootNext pas réglé : ${r}"; fi
+            if [[ "$(efibootmgr | grep -E '^BootOrder' || true)" == "${avant}" ]]; then ok "ordre de démarrage inchangé"; else ko "ordre de démarrage modifié"; fi
+            efibootmgr -q -N >/dev/null 2>&1; efibootmgr -q -b "${num}" -B >/dev/null 2>&1
+            if efibootmgr | grep -qE "^BootNext|Windows Boot Manager"; then ko "fausse entrée Windows pas nettoyée"; else ok "fausse entrée Windows supprimée"; fi
+        else ko "fausse entrée UEFI pas créée (${disque})"; fi
+    else info "VM sans UEFI : test Windows sauté"; fi
+    ;;
+systeme-bascule)
+    # Vrai changement de canal par l'aide système (téléchargement de l'image) : prêt au prochain redémarrage
+    r="$(busctl --system call org.thomasos.Systeme /org/thomasos/Systeme org.thomasos.Systeme1 ChangerCanal s testing 2>&1)"
+    info "changement de canal : ${r}"
+    debut=$SECONDS
+    for _ in $(seq 150); do
+        sleep 10
+        t="$(busctl --system --json=short call org.thomasos.Systeme /org/thomasos/Systeme org.thomasos.Systeme1 Etat 2>/dev/null \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0].get("travail",""))' 2>/dev/null)"
+        [[ -z "${t}" ]] && break
+    done
+    attente="$(bootc status --format json 2>/dev/null | python3 -c 'import json,sys; s=json.load(sys.stdin)["status"]; print(((s.get("staged") or {}).get("image") or {}).get("image",{}).get("image",""))' 2>/dev/null)"
+    if [[ "${attente}" == *:testing ]]; then ok "changement de canal prêt en $((SECONDS - debut)) s : ${attente} au prochain redémarrage"
+    else ko "changement de canal pas prêt (${attente:-rien en attente}) ; journal :"; journalctl -u thomas-systeme --no-pager | tail -8 | sed 's/^/INFO    /'; fi
+    ;;
 applis)
     for _ in $(seq 72); do [[ -n "$(systemctl show -p ExecMainExitTimestamp --value thomas-flatpak-preinstall.service)" ]] && break; sleep 10; done
     info "service des applis : $(systemctl show -p Result --value thomas-flatpak-preinstall.service)"
     info "applis Flatpak installées : $(flatpak list --app --columns=application | tr '\n' ' ')"
     ;;
 *)
-    echo "usage : verifier.sh demarrage|preparer|session|bienvenue|bienvenue-fermee|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|phase8|control-pages|applis"; exit 2 ;;
+    echo "usage : verifier.sh demarrage|preparer|session|bienvenue|bienvenue-fermee|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|phase8|control-pages|systeme|systeme-bascule|applis"; exit 2 ;;
 esac
 exit $((erreurs > 0))

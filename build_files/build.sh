@@ -196,7 +196,9 @@ EOF
 #     Fenêtres de choix (partie de base de Styles Thomas OS)
 rpm -q kdialog >/dev/null || dnf5 -y install kdialog
 chmod 0755 /usr/bin/thomas-style /usr/libexec/thomas-core /usr/libexec/thomas-surveillance /usr/libexec/thomas-jeu \
-    /usr/libexec/thomas-jeu-maintien /usr/libexec/thomas-nettoyage
+    /usr/libexec/thomas-jeu-maintien /usr/libexec/thomas-nettoyage /usr/libexec/thomas-systeme
+#     Aide système (canal, variante, redémarrer sur Windows) : efibootmgr règle le démarrage suivant (UEFI)
+command -v efibootmgr >/dev/null || dnf5 -y install efibootmgr
 #     Phase 8 : nettoyage chaque semaine (système), mode jeu automatique et surveillance (dans chaque session)
 systemctl enable thomas-nettoyage.timer
 systemctl --global enable thomas-jeu.timer thomas-surveillance.timer
@@ -361,6 +363,20 @@ test -f /usr/share/plasma/plasmoids/org.thomasos.horloge/contents/ui/main.qml
 # Thomas Core (service D-Bus lancé à la demande) et Thomas Control (appli compilée)
 test -f /usr/share/dbus-1/services/org.thomasos.Core.service
 HOME="$(mktemp -d)" /usr/libexec/thomas-core --test
+# Aide système (bus système, root, polkit) : fichiers D-Bus/polkit valides, entrées refusées, efibootmgr présent
+/usr/libexec/thomas-systeme --test
+python3 - <<'EOF'
+import xml.etree.ElementTree as ET
+p = ET.parse("/usr/share/polkit-1/actions/org.thomasos.systeme.policy").getroot()
+ids = sorted(a.get("id") for a in p.findall("action"))
+assert ids == ["org.thomasos.systeme.canal", "org.thomasos.systeme.variante", "org.thomasos.systeme.windows"], ids
+c = ET.parse("/usr/share/dbus-1/system.d/org.thomasos.Systeme.conf").getroot()
+assert c.find("policy[@user='root']/allow[@own='org.thomasos.Systeme']") is not None
+print("aide système : polkit", ids, "et D-Bus OK")
+EOF
+grep -q '^SystemdService=thomas-systeme.service$' /usr/share/dbus-1/system-services/org.thomasos.Systeme.service
+test -f /usr/lib/systemd/system/thomas-systeme.service
+command -v efibootmgr >/dev/null || { echo "ERREUR : efibootmgr absent"; exit 1; }
 command -v thomas-control >/dev/null || { echo "ERREUR : Thomas Control absent"; exit 1; }
 test -f /usr/share/applications/org.thomasos.control.desktop
 command -v thomas-studio >/dev/null || { echo "ERREUR : Thomas Studio absent"; exit 1; }

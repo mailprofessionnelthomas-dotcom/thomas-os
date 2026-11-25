@@ -28,6 +28,9 @@ class Controle : public QObject
     Q_PROPERTY(bool mesureEnCours READ mesureEnCours NOTIFY reseauChanged)
     Q_PROPERTY(QVariantMap nettoyage READ nettoyage NOTIFY nettoyageChanged)
     Q_PROPERTY(bool nettoyageEnCours READ nettoyageEnCours NOTIFY nettoyageChanged)
+    Q_PROPERTY(QVariantMap systeme READ systeme NOTIFY systemeChanged)
+    Q_PROPERTY(QString progressionSysteme READ progressionSysteme NOTIFY systemeChanged)
+    Q_PROPERTY(bool attenteSysteme READ attenteSysteme NOTIFY systemeChanged)
 
 public:
     explicit Controle(QObject *parent = nullptr);
@@ -45,6 +48,15 @@ public:
     bool mesureEnCours() const { return m_mesures > 0; }
     QVariantMap nettoyage() const { return m_nettoyage; }
     bool nettoyageEnCours() const { return m_nettoyageEnCours; }
+    QVariantMap systeme() const { return m_systeme; }
+    QString progressionSysteme() const { return m_progressionSysteme; }
+    bool attenteSysteme() const { return m_attenteSysteme; }
+
+    // Phase 9 : aide système (org.thomasos.Systeme, bus système, root) ; polkit demande le mot de passe si besoin
+    Q_INVOKABLE void actualiserSysteme();
+    Q_INVOKABLE void changerCanal(const QString &canal);
+    Q_INVOKABLE void changerVariante(const QString &variante);
+    Q_INVOKABLE void redemarrerWindows();
 
     // Phase 8 : performances, gaming, maintenance, diagnostic réseau (tout passe par Thomas Core)
     Q_INVOKABLE void actualiserTemperatures();
@@ -68,6 +80,10 @@ public:
 public Q_SLOTS:
     void actualiser();  // relit tout auprès de Thomas Core (aussi appelé quand le style change)
 
+private Q_SLOTS:
+    void surProgression(const QString &action, const QString &ligne);
+    void surFini(const QString &action, bool ok, const QString &texte);
+
 Q_SIGNALS:
     void infosChanged();
     void stylesChanged();
@@ -76,6 +92,7 @@ Q_SIGNALS:
     void energieChanged();
     void reseauChanged();
     void nettoyageChanged();
+    void systemeChanged();
     void erreur(const QString &message);
     void message(const QString &message);
 
@@ -83,7 +100,11 @@ private:
     void appelerCore(const QString &interface, const QString &methode, const QVariantList &args,
                      const std::function<void(const QList<QVariant> &)> &suite, int delaiMs = 30000,
                      const std::function<void()> &siErreur = {});
+    void appelerSysteme(const QString &methode, const QVariantList &args);
 
+    QVariantMap m_systeme;
+    QString m_progressionSysteme;
+    bool m_attenteSysteme = false;
     QVariantList m_temperatures;
     QVariantMap m_energie;
     bool m_jeuAuto = true;

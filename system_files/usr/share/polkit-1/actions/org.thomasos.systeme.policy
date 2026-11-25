@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Thomas OS : autorisations de l'aide système (org.thomasos.Systeme, /usr/libexec/thomas-systeme).
+     Changer de canal ou de variante : mot de passe administrateur (gardé quelques minutes).
+     Redémarrer sur Windows : comme « Redémarrer », permis à la personne assise devant le PC. -->
+<policyconfig>
+  <vendor>Thomas OS</vendor>
+
+  <action id="org.thomasos.systeme.canal">
+    <description>Changer le canal de mises à jour de Thomas OS</description>
+    <message>Le mot de passe administrateur est nécessaire pour changer le canal de mises à jour.</message>
+    <icon_name>system-software-update</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="org.thomasos.systeme.variante">
+    <description>Changer la variante de Thomas OS (carte graphique)</description>
+    <message>Le mot de passe administrateur est nécessaire pour changer de variante (carte graphique).</message>
+    <icon_name>video-display</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="org.thomasos.systeme.windows">
+    <description>Redémarrer sur Windows</description>
+    <message>Une autorisation est nécessaire pour redémarrer sur Windows.</message>
+    <icon_name>system-reboot</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

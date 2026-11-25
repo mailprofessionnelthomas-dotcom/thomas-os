@@ -178,6 +178,15 @@ jobs:
           ${SSH} "tar -C /tmp/control -c ." | tar -x -C resultats/control
           python3 ci/planche.py resultats/control-pages.jpg resultats/control/page-*.png
 
+      # Phase 9 : aide système (bus système, root, polkit) : canal, variante, redémarrer sur Windows
+      - name: Aide système (polkit, entrées piégées, Windows)
+        run: bash ci/vm/dans-la-vm.sh systeme | tee -a resultats/rapport.txt
+
+      - name: Changement de canal réel (information)
+        continue-on-error: true
+        timeout-minutes: 30
+        run: bash ci/vm/dans-la-vm.sh systeme-bascule | tee -a resultats/rapport.txt
+
       - name: Installation automatique des applis (information)
         continue-on-error: true
         timeout-minutes: 15
