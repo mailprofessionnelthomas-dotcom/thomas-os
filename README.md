@@ -27,7 +27,7 @@ Comment connaître ta carte sous Windows : `Ctrl + Maj + Échap` → onglet **Pe
 
 ## Ce qui est installé
 
-Thomas OS installe le strict utile : chacun ajoute ses jeux et ses applis depuis la boutique d'applis (Bazaar). Steam, Lutris et l'ancien thème Oxygen de Bazzite sont retirés ; les outils de jeu invisibles (Gamescope, MangoHud…) restent, pour qu'un jeu installé plus tard tourne directement.
+Thomas OS installe le strict utile : chacun ajoute ses jeux et ses applis depuis la boutique d'applis (Bazaar), ou comme sur Windows, avec un double-clic sur le fichier téléchargé. L'installateur Thomas OS prend alors la version boutique (Steam ; Epic Games → Heroic…), lance les `.exe` avec Proton et range les AppImage dans le menu. Steam, Lutris et l'ancien thème Oxygen de Bazzite sont retirés ; les outils de jeu invisibles (Gamescope, MangoHud…) restent, pour qu'un jeu installé plus tard tourne directement.
 
 | Pour quoi | Applis |
 |---|---|

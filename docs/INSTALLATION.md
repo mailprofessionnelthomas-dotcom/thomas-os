@@ -93,6 +93,12 @@ Photos de ces écrans (prises en VM) : `captures/vm/mok-1-menu.png` à `mok-4-re
 - **Aller sur Windows :** dans Thomas Control → Système → « Redémarrer sur Windows » (le PC redémarre une fois sur Windows). Sinon : la touche du menu de démarrage du PC (étape 4), puis « Windows Boot Manager ».
 - **Thomas Welcome** s'ouvre au 1er login : connexion, carte graphique, style, préférences.
 - **Les applis** (Opera GX, Firefox, Spotify…) s'installent toutes seules dès que tu es connecté à Internet.
+- **Installer autre chose :**
+  - soit dans **Bazaar**, la boutique d'applis ;
+  - soit comme sur Windows : télécharge le fichier sur le site, puis double-clique dessus. L'installateur Thomas OS s'en occupe :
+    - Steam, Discord… : il installe la version boutique ;
+    - Epic Games : il installe **Heroic**, qui le remplace sous Linux ;
+    - les autres `.exe` : il les lance avec Proton. Beaucoup marchent, pas tous. Les jeux avec anti-triche ne marchent jamais.
 - **Si quelque chose ne va pas :** Windows reste toujours accessible, par le menu de démarrage du PC (« Windows Boot Manager »).
 - **Changer de canal ou de version (carte graphique) :** Thomas Control → Système (mot de passe administrateur), puis redémarre. Photo : `captures/vm/control-systeme.png`.
 

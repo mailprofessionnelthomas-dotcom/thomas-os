@@ -22,7 +22,7 @@ jobs:
   vm:
     name: Démarrage dans une machine virtuelle
     runs-on: ubuntu-26.04
-    timeout-minutes: 75
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash  # = bash -eo pipefail : une vérification ratée fait échouer l'étape, même derrière « tee »
@@ -191,6 +191,31 @@ jobs:
         continue-on-error: true
         timeout-minutes: 15
         run: bash ci/vm/dans-la-vm.sh applis | tee -a resultats/rapport.txt
+
+      # Installateur Thomas OS : double-clic sur un fichier téléchargé (.exe, .deb, .msi, .AppImage), comme sur Windows
+      - name: Installateur (double-clic, Steam, Epic, AppImage)
+        run: |
+          bash ci/vm/dans-la-vm.sh installateur-ouvrir | tee -a resultats/rapport.txt
+          sleep 2
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/11-installateur-steam.png
+          bash ci/vm/dans-la-vm.sh installateur | tee -a resultats/rapport.txt
+
+      - name: Installateur, vraie installation depuis la boutique (information)
+        continue-on-error: true
+        timeout-minutes: 20
+        run: bash ci/vm/dans-la-vm.sh installateur-boutique | tee -a resultats/rapport.txt
+
+      # Un faux installateur Windows (compilé ici, jamais sur un PC) : Proton téléchargé, raccourci du menu, relancé
+      - name: Installateur, programme Windows avec Proton (information)
+        continue-on-error: true
+        timeout-minutes: 35
+        run: |
+          sudo apt-get install -y -qq gcc-mingw-w64-x86-64 >/dev/null
+          x86_64-w64-mingw32-gcc -O2 -Wall -o appli-test.exe ci/vm/windows/appli-test.c
+          x86_64-w64-mingw32-gcc -O2 -Wall -o installeur-test.exe ci/vm/windows/installeur-test.c -lole32 -luuid -lshell32
+          ${SSH} 'cat >/tmp/appli-test.exe' <appli-test.exe
+          ${SSH} 'cat >/tmp/installeur-test.exe' <installeur-test.exe
+          bash ci/vm/dans-la-vm.sh installateur-windows | tee -a resultats/rapport.txt
 
       - name: Résumé
         if: always()

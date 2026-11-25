@@ -199,6 +199,28 @@ chmod 0755 /usr/bin/thomas-style /usr/libexec/thomas-core /usr/libexec/thomas-su
     /usr/libexec/thomas-jeu-maintien /usr/libexec/thomas-nettoyage /usr/libexec/thomas-systeme
 #     Aide système (canal, variante, redémarrer sur Windows) : efibootmgr règle le démarrage suivant (UEFI)
 command -v efibootmgr >/dev/null || dnf5 -y install efibootmgr
+#     Installateur Thomas OS (demandé par Thomas le 2026-11-25) : double-clic sur un fichier téléchargé (.exe, .msi, .deb,
+#     .rpm, .AppImage) = la bonne façon de l'installer. Constaté dans l'image : .deb/.rpm s'ouvraient avec Ark, les .exe
+#     avec rien. Les .exe passent par Proton (umu-run, fourni par Bazzite). Associations dans /etc/xdg (avant celles de
+#     /usr/share) : un choix fait par l'utilisateur lui-même garde la priorité.
+chmod 0755 /usr/bin/thomas-installateur
+python3 - <<'EOF'
+import os
+TYPES = ["application/x-msdownload", "application/x-ms-dos-executable", "application/x-msi",
+         "application/x-ms-win-installer", "application/vnd.debian.binary-package", "application/x-deb",
+         "application/x-rpm", "application/x-redhat-package-manager", "application/vnd.appimage",
+         "application/x-iso9660-appimage"]
+for chemin in ("/etc/xdg/mimeapps.list", "/etc/xdg/kde-mimeapps.list"):
+    lignes = open(chemin, encoding="utf-8").read().splitlines() if os.path.exists(chemin) else []
+    lignes = [l for l in lignes if l.split("=", 1)[0].strip() not in TYPES]
+    if "[Default Applications]" not in lignes:
+        lignes.insert(0, "[Default Applications]")
+    i = lignes.index("[Default Applications]") + 1
+    lignes[i:i] = [f"{t}=org.thomasos.installateur.desktop" for t in TYPES]
+    open(chemin, "w", encoding="utf-8").write("\n".join(lignes) + "\n")
+    print(f"{chemin} : {len(TYPES)} types de fichiers → installateur Thomas OS")
+EOF
+update-desktop-database /usr/share/applications 2>/dev/null || true
 #     Phase 8 : nettoyage chaque semaine (système), mode jeu automatique et surveillance (dans chaque session)
 systemctl enable thomas-nettoyage.timer
 systemctl --global enable thomas-jeu.timer thomas-surveillance.timer
@@ -377,6 +399,16 @@ EOF
 grep -q '^SystemdService=thomas-systeme.service$' /usr/share/dbus-1/system-services/org.thomasos.Systeme.service
 test -f /usr/lib/systemd/system/thomas-systeme.service
 command -v efibootmgr >/dev/null || { echo "ERREUR : efibootmgr absent"; exit 1; }
+# Installateur : décisions (Steam, Epic → Heroic, .exe, AppImage…), raccourcis Windows, outils (umu-run…), et
+# double-clic sur ces fichiers = installateur (résolution par GLib, avec les listes propres à KDE)
+/usr/bin/thomas-installateur --verifier
+for t in application/x-msdownload application/x-msi application/vnd.debian.binary-package application/x-rpm application/vnd.appimage; do
+    defaut="$(LC_ALL=C XDG_CURRENT_DESKTOP=KDE gio mime "${t}" 2>&1 || true)"
+    [[ "${defaut%%$'\n'*}" == *org.thomasos.installateur.desktop* ]] \
+        || { echo "ERREUR : ${t} ne s'ouvre pas avec l'installateur : ${defaut%%$'\n'*}"; exit 1; }
+done
+grep -q '^application/x-compressed-tar=org.kde.ark.desktop' /usr/share/applications/kde-mimeapps.list \
+    || echo "::warning::les archives .tar.gz ne s'ouvrent plus avec Ark par défaut"
 command -v thomas-control >/dev/null || { echo "ERREUR : Thomas Control absent"; exit 1; }
 test -f /usr/share/applications/org.thomasos.control.desktop
 command -v thomas-studio >/dev/null || { echo "ERREUR : Thomas Studio absent"; exit 1; }

@@ -184,6 +184,7 @@ Une seule source pour les couleurs, utilisée partout : thème Plasma, applis, �
 | Températures | Lecture des capteurs (hwmon) par le Core, alerte par notification | Léger |
 | Réseau | Diagnostic seulement (débit, ping, stabilité). Aucun réglage réseau « universel » | Règle de la vision |
 | Accueil Bazzite | « Bazzite Portal » et ses annonces au 1er login (constatés en VM) sont **masqués** et remplacés par Thomas Welcome | Une seule expérience |
+| Installer un fichier téléchargé | **Installateur Thomas OS** (`/usr/bin/thomas-installateur`, demandé par Thomas le 25/11/2026), ouvert par double-clic sur `.exe`, `.msi`, `.deb`, `.rpm`, `.AppImage` (associations dans `/etc/xdg/*mimeapps.list`). Appli connue ou trouvée sur Flathub → version boutique (Steam ; Epic Games et GOG → Heroic ; Roblox → Sober…). `.exe`/`.msi` → Proton (`umu-run`, fourni par Bazzite) dans un « Windows » commun (`~/.local/share/thomas-os/windows`), et ses raccourcis du menu Démarrer deviennent des raccourcis du menu. `.AppImage` → `~/Applications` + menu. `.deb`/`.rpm` sans équivalent → explication (système protégé). Journal : `~/.cache/thomas-os/installateur.log` | Comme sur Windows, sans casser les mises à jour du système |
 
 ## 8. Critères d'acceptation (vérifiés automatiquement)
 

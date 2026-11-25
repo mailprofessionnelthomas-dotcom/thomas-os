@@ -1,0 +1,695 @@
+#!/usr/bin/python3
+"""Installateur Thomas OS : double-clic sur un fichier téléchargé, comme sur Windows.
+
+  thomas-installateur FICHIER            ce que fait le double-clic (fenêtres kdialog)
+  thomas-installateur --oui FICHIER      pareil, en répondant oui à tout et sans rien ouvrir après (tests)
+  thomas-installateur --choix FICHIER…   décision seule, en JSON, sans rien installer (tests)
+  thomas-installateur --lancer EXE       lance un programme Windows installé (raccourcis du menu)
+  thomas-installateur --verifier         auto-test (build de l'image, sans Internet)
+
+Selon le fichier :
+  - appli connue (Steam, Epic Games → Heroic, Discord…) ou trouvée dans la boutique (Flathub) : la version boutique est
+    installée (même appli, mises à jour automatiques) ; Thomas OS n'installe pas les paquets .deb/.rpm (système protégé) ;
+  - .exe / .msi : lancé avec Proton (umu-run, dans l'image) dans un « Windows » commun (~/.local/share/thomas-os/windows) ;
+    les raccourcis du menu Démarrer créés par l'installateur Windows deviennent des raccourcis du menu Thomas OS ;
+  - .AppImage : rangé dans ~/Applications et ajouté au menu.
+Journal : ~/.cache/thomas-os/installateur.log
+"""
+import contextlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+TITRE = "Installateur Thomas OS"
+HEROIC = "com.heroicgameslauncher.hgl"
+MAISON = Path.home()
+PREFIXE = MAISON / ".local/share/thomas-os/windows"
+APPLIS = MAISON / ".local/share/applications"
+CACHE = MAISON / ".cache/thomas-os"
+JOURNAL = CACHE / "installateur.log"
+EXTENSIONS = (".tar.gz", ".tar.xz", ".tar.zst", ".tar.bz2", ".tgz", ".appimage", ".exe", ".msi", ".deb", ".rpm")
+
+# (motif cherché dans le nom du fichier, id Flathub ou None, nom affiché, explication). Ordre important : le 1er qui
+# correspond gagne (Obsidian avant OBS, Roblox Studio avant Roblox).
+CONNUS = [
+    (r"\bsteam", "com.valvesoftware.Steam", "Steam", ""),
+    (r"\bepic", HEROIC, "Heroic (Epic Games)",
+     "Epic Games n'existe pas pour Linux : Heroic le remplace. Tu te connectes avec ton compte Epic et tu retrouves "
+     "tes jeux, les gratuits compris."),
+    (r"\bgog\b|\bgalaxy\b", HEROIC, "Heroic (GOG)", "GOG Galaxy n'existe pas pour Linux : Heroic le remplace (compte GOG)."),
+    (r"\bamazon games\b", HEROIC, "Heroic (Amazon Games)", "Amazon Games n'existe pas pour Linux : Heroic le remplace."),
+    (r"\bheroic\b", HEROIC, "Heroic", ""),
+    (r"\bdiscord", "com.discordapp.Discord", "Discord", ""),
+    (r"\bspotify", "com.spotify.Client", "Spotify", ""),
+    (r"\bopera ?gx\b", "com.opera.opera-gx", "Opera GX", ""),
+    (r"\bchrome\b", "com.google.Chrome", "Google Chrome", ""),
+    (r"\bfirefox", "org.mozilla.firefox", "Firefox", ""),
+    (r"\bbrave\b", "com.brave.Browser", "Brave", ""),
+    (r"\bvlc\b", "org.videolan.VLC", "VLC", ""),
+    (r"\bobsidian", "md.obsidian.Obsidian", "Obsidian", ""),
+    (r"\bobs\b", "com.obsproject.Studio", "OBS Studio", ""),
+    (r"\broblox ?studio", "org.vinegarhq.Vinegar", "Vinegar (Roblox Studio)",
+     "Roblox Studio n'a pas de version Linux : Vinegar le fait tourner. Ça marche souvent, pas toujours : Windows reste "
+     "là au besoin."),
+    (r"\broblox", "org.vinegarhq.Sober", "Sober (Roblox)",
+     "Roblox n'a pas de version Linux officielle : Sober fait tourner Roblox (sa version Android)."),
+    (r"\bminecraft", "org.prismlauncher.PrismLauncher", "Prism Launcher (Minecraft)",
+     "Prism Launcher lance Minecraft (Java) avec ton compte Microsoft."),
+    (r"\bprism ?launcher", "org.prismlauncher.PrismLauncher", "Prism Launcher", ""),
+    (r"\blutris\b", "net.lutris.Lutris", "Lutris", ""),
+    (r"\btelegram", "org.telegram.desktop", "Telegram", ""),
+    (r"\bsignal\b", "org.signal.Signal", "Signal", ""),
+    (r"\bzoom\b", "us.zoom.Zoom", "Zoom", ""),
+    (r"\bslack\b", "com.slack.Slack", "Slack", ""),
+    (r"\bteamspeak", "com.teamspeak.TeamSpeak", "TeamSpeak", ""),
+    (r"\bgimp\b", "org.gimp.GIMP", "GIMP", ""),
+    (r"\bblender\b", "org.blender.Blender", "Blender", ""),
+    (r"\baudacity\b", "org.audacityteam.Audacity", "Audacity", ""),
+    (r"\bkrita\b", "org.kde.krita", "Krita", ""),
+    (r"\bthunderbird", "org.mozilla.Thunderbird", "Thunderbird", ""),
+    (r"\bqbittorrent", "org.qbittorrent.qBittorrent", "qBittorrent", ""),
+    (r"\bbitwarden", "com.bitwarden.desktop", "Bitwarden", ""),
+    (r"\bkdenlive", "org.kde.kdenlive", "Kdenlive", ""),
+    (r"\blibreoffice", "org.libreoffice.LibreOffice", "LibreOffice", ""),
+    # déjà dans Thomas OS, inutile ou impossible sous Linux
+    (r"\bvs ?code\b|visual studio code", None, "VS Code", "VS Code est déjà dans Thomas OS : menu → Visual Studio Code."),
+    (r"\b(amd ?software|adrenalin|radeon ?software|amd ?chipset)", None, "Pilote AMD",
+     "Inutile : le pilote AMD est déjà dans Thomas OS et se met à jour avec le système."),
+    (r"\b(nvidia|geforce)", None, "Pilote NVIDIA",
+     "Inutile : le pilote NVIDIA est dans la version NVIDIA de Thomas OS (Thomas Control → Système → Version)."),
+    (r"\b(winrar|7 ?zip|7z ?\d)", None, "Archives",
+     "Inutile : Ark, déjà installé, ouvre les .zip, .rar et .7z. Double-clique sur l'archive."),
+    (r"\b(faceit|vanguard|riot ?client|valorant|league of legends|easy ?anti ?cheat|battleye)", None, "Anti-triche",
+     "Ne marche pas sous Linux (anti-triche du noyau). Pour ça, démarre Windows : Thomas Control → Système → "
+     "« Redémarrer sur Windows »."),
+]
+
+# mots qui ne disent rien sur l'appli (version, architecture, « setup »…)
+BRUIT = {"setup", "installer", "install", "installation", "latest", "x64", "x86", "64", "32", "amd64", "arm64", "aarch64",
+         "win", "win64", "win32", "windows", "linux", "portable", "full", "offline", "online", "stable", "release", "beta",
+         "user", "system", "bin", "i386", "i686", "noarch", "universal", "web", "lts", "desktop", "client", "app",
+         "download", "x86_64", "msi", "exe", "deb", "rpm", "appimage", "tar", "gz", "xz", "zst"}
+
+
+def journal(*morceaux):
+    try:
+        CACHE.mkdir(parents=True, exist_ok=True)
+        with open(JOURNAL, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + " ".join(str(m) for m in morceaux) + "\n")
+    except OSError:
+        pass
+
+
+def extension(nom):
+    bas = nom.lower()
+    return next((e for e in EXTENSIONS if bas.endswith(e)), "")
+
+
+def mots(nom):
+    """« OBS-Studio-31.0-Windows-Installer.exe » → « obs studio 31 0 windows installer »."""
+    base = nom[:len(nom) - len(extension(nom))] if extension(nom) else nom
+    base = re.sub(r"\s*\(\d+\)$", "", base)  # « SteamSetup (1).exe » : téléchargé deux fois
+    base = re.sub(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ", base)  # SteamSetup → Steam Setup
+    return " ".join(re.sub(r"[^A-Za-z0-9]+", " ", base).lower().split())
+
+
+def deviner(texte):
+    """Le nom de l'appli seul : « discord 0 0 76 » → « discord », « obs studio 31 0 » → « obs studio »."""
+    garde = []
+    for m in texte.split():
+        inutile = m in BRUIT or re.fullmatch(r"v?\d+[a-z]?\d*|(fc|el)\d+", m)
+        if inutile:
+            if garde:
+                break
+            continue
+        garde.append(m)
+    return " ".join(garde[:3])
+
+
+def joli_nom(fichier):
+    base = fichier.name[:len(fichier.name) - len(extension(fichier.name))] or fichier.name
+    base = re.split(r"[-_ ](?=v?\d|x86|amd64|aarch64|linux)", base, maxsplit=1)[0]
+    return base.replace("_", " ").replace("-", " ").strip() or fichier.name
+
+
+def decider(fichier):
+    ext = extension(fichier.name)
+    texte = mots(fichier.name)
+    for motif, app_id, nom, explication in CONNUS:
+        if re.search(motif, texte):
+            if app_id is None:
+                return {"genre": "message", "nom": nom, "explication": explication, "ext": ext}
+            return {"genre": "boutique", "id": app_id, "nom": nom, "explication": explication, "ext": ext}
+    mot = deviner(texte)
+    if ext in (".exe", ".msi"):
+        return {"genre": "windows", "mot": mot, "ext": ext}
+    if ext == ".appimage":
+        return {"genre": "appimage", "nom": joli_nom(fichier), "ext": ext}
+    if ext:
+        return {"genre": "recherche", "mot": mot, "ext": ext}
+    return {"genre": "inconnu", "ext": ext}
+
+
+# --- fenêtres ---------------------------------------------------------------------------------------------------------
+class Interface:
+    def __init__(self, auto):
+        self.auto = auto
+
+    def kdialog(self, *args, sortie=False):
+        r = subprocess.run(["kdialog", "--title", TITRE, *args], capture_output=sortie, text=True)
+        return r
+
+    def oui_non(self, texte, oui="Installer", non="Annuler", auto=True):
+        if self.auto:
+            print(f"QUESTION {texte.replace(chr(10), ' ')} → {'oui' if auto else 'non'}", flush=True)
+            return auto
+        return self.kdialog("--yes-label", oui, "--no-label", non, "--yesno", texte).returncode == 0
+
+    def choix(self, texte, options):
+        if self.auto:
+            print(f"CHOIX    {texte.replace(chr(10), ' ')} → {options[0][0]}", flush=True)
+            return options[0][0]
+        args = ["--radiolist", texte]
+        for i, (tag, libelle) in enumerate(options):
+            args += [tag, libelle, "on" if i == 0 else "off"]
+        r = self.kdialog(*args, sortie=True)
+        return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
+
+    def info(self, texte):
+        if self.auto:
+            print(f"INFO     {texte.replace(chr(10), ' ')}", flush=True)
+        else:
+            self.kdialog("--msgbox", texte)
+
+    def erreur(self, texte):
+        journal("erreur :", texte.replace("\n", " "))
+        if self.auto:
+            print(f"ERREUR   {texte.replace(chr(10), ' ')}", flush=True)
+        else:
+            self.kdialog("--sorry", texte)
+
+    def notifier(self, titre, texte):
+        if self.auto:
+            print(f"NOTIF    {titre} : {texte}", flush=True)
+            return
+        subprocess.run(["notify-send", "-a", "Thomas OS", "-i", "system-software-install", titre, texte],
+                       capture_output=True)
+
+    @contextlib.contextmanager
+    def attente(self, texte):
+        """Fenêtre « en cours » (barre qui défile) pendant une action longue."""
+        if self.auto:
+            print(f"ATTENTE  {texte}", flush=True)
+            yield
+            return
+        ref = []
+        try:
+            r = subprocess.run(["kdialog", "--title", TITRE, "--progressbar", texte, "0"], capture_output=True,
+                               text=True, timeout=20)
+            ref = r.stdout.split()
+        except (OSError, subprocess.SubprocessError):
+            pass
+        try:
+            yield
+        finally:
+            if len(ref) == 2:
+                subprocess.run(["gdbus", "call", "--session", "--dest", ref[0], "--object-path", ref[1], "--method",
+                                "org.kde.kdialog.ProgressDialog.close"], capture_output=True)
+
+
+# --- boutique (Flathub) -----------------------------------------------------------------------------------------------
+def installe(app_id):
+    return subprocess.run(["flatpak", "info", app_id], capture_output=True).returncode == 0
+
+
+def lancer_flatpak(app_id):
+    subprocess.Popen(["flatpak", "run", app_id], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def installer_flatpak(app_id):
+    """Installe pour tout le PC (comme Bazaar), sinon pour ce compte seulement. Renvoie la portée, ou None."""
+    for portee in ("--system", "--user"):
+        if portee == "--user":
+            subprocess.run(["flatpak", "remote-add", "--user", "--if-not-exists", "flathub",
+                            "https://dl.flathub.org/repo/flathub.flatpakrepo"], capture_output=True)
+        r = subprocess.run(["flatpak", "install", "-y", portee, "flathub", app_id], capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL)
+        journal("flatpak install", portee, app_id, "→ code", r.returncode, (r.stderr or "").strip()[-300:])
+        if r.returncode == 0:
+            return portee
+    return None
+
+
+def chercher_boutique(mot):
+    """Applis Flathub dont le nom correspond : (fortes, faibles), chacune = [(id, nom)]."""
+    if not mot:
+        return [], []
+    try:  # catalogue à jour ; jamais de mot de passe demandé juste pour chercher
+        subprocess.run(["flatpak", "update", "--appstream", "--noninteractive", "flathub"], capture_output=True,
+                       timeout=120, stdin=subprocess.DEVNULL)
+    except subprocess.SubprocessError:
+        pass
+    try:
+        r = subprocess.run(["flatpak", "search", "--columns=application,name", mot], capture_output=True, text=True,
+                           timeout=60)
+    except subprocess.SubprocessError:
+        return [], []
+    cible = mot.replace(" ", "")
+    fortes, faibles, vus = [], [], set()
+    for ligne in r.stdout.splitlines():
+        champs = [c.strip() for c in ligne.split("\t")]
+        if len(champs) < 2 or "." not in champs[0] or champs[0] in vus:
+            continue
+        app_id, nom = champs[0], champs[1]
+        vus.add(app_id)
+        nom_n = re.sub(r"[^a-z0-9]", "", nom.lower())
+        fin = re.sub(r"[^a-z0-9]", "", app_id.rsplit(".", 1)[-1].lower())
+        if cible in (nom_n, fin):
+            fortes.append((app_id, nom))
+        elif cible in nom_n or cible in fin:
+            faibles.append((app_id, nom))
+    return fortes, faibles[:4]
+
+
+def ouvrir_bazaar():
+    subprocess.Popen(["bazaar"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+
+
+def installer_boutique(ui, app_id, nom, explication=""):
+    if installe(app_id):
+        if ui.oui_non(f"{nom} est déjà installé. L'ouvrir ?", oui="Ouvrir", non="Fermer", auto=False):
+            lancer_flatpak(app_id)
+        print(f"OK       {nom} ({app_id}) déjà installé", flush=True)
+        return 0
+    texte = (explication + "\n\n" if explication else "") + (
+        f"Installer {nom} depuis la boutique d'applis ?\n\n"
+        "C'est la version Linux de l'appli : elle se mettra à jour toute seule.")
+    if not ui.oui_non(texte):
+        return 1
+    with ui.attente(f"Installation de {nom}…\nÇa peut prendre quelques minutes."):
+        portee = installer_flatpak(app_id)
+    if not portee:
+        ui.erreur(f"{nom} n'a pas pu s'installer.\n\nVérifie ta connexion Internet, puis double-clique encore sur le "
+                  f"fichier.\nDétails : {JOURNAL}")
+        return 1
+    print(f"OK       {nom} ({app_id}) installé ({portee.lstrip('-')})", flush=True)
+    journal("installé :", app_id, portee)
+    ui.notifier(f"{nom} est installé", "Tu le trouves dans le menu.")
+    if ui.oui_non(f"{nom} est installé : il est dans le menu.\n\nL'ouvrir maintenant ?", oui="Ouvrir", non="Plus tard",
+                  auto=False):
+        lancer_flatpak(app_id)
+    return 0
+
+
+def rechercher(ui, fichier, d):
+    """Paquet .deb/.rpm ou archive : la même appli dans la boutique, sinon une explication."""
+    mot = d.get("mot", "")
+    with ui.attente(f"Recherche de « {mot} » dans la boutique d'applis…"):
+        fortes, faibles = chercher_boutique(mot)
+    if fortes:
+        return installer_boutique(ui, fortes[0][0], fortes[0][1],
+                                  "Thomas OS n'installe pas ce genre de fichier directement, mais la même appli existe "
+                                  "dans la boutique.")
+    if faibles:
+        tag = ui.choix(f"Je n'ai pas trouvé « {mot} » exactement dans la boutique.\nC'est une de celles-ci ?",
+                       [(i, f"{n}  ({i})") for i, n in faibles] + [("aucune", "Aucune : ouvrir la boutique")])
+        if tag and tag != "aucune":
+            nom = next(n for i, n in faibles if i == tag)
+            return installer_boutique(ui, tag, nom)
+        if tag == "aucune":
+            ouvrir_bazaar()
+        return 1
+    if d["ext"].startswith(".tar") or d["ext"] == ".tgz":
+        if ui.oui_non(f"« {fichier.name} » est une archive, pas une appli de la boutique.\n\nL'ouvrir avec Ark ?",
+                      oui="Ouvrir avec Ark", non="Fermer", auto=False):
+            subprocess.Popen(["ark", str(fichier)], start_new_session=True)
+        return 2
+    genre = "Ubuntu/Debian" if d["ext"] == ".deb" else "un autre Fedora"
+    texte = (f"« {fichier.name} » est un paquet pour {genre}.\n\n"
+             "Thomas OS est un système protégé : il n'installe pas ces paquets directement (c'est ce qui rend les "
+             "mises à jour sûres), et cette appli n'est pas dans la boutique sous ce nom.\n\n"
+             f"Cherche « {mot or fichier.name} » dans Bazaar, ou prends sur le site la version AppImage ou Windows (.exe).")
+    if ui.oui_non(texte, oui="Ouvrir Bazaar", non="Fermer", auto=False):
+        ouvrir_bazaar()
+    return 2
+
+
+# --- AppImage ---------------------------------------------------------------------------------------------------------
+def quoter_exec(arg):
+    """Argument de la ligne Exec= d'un fichier .desktop (guillemets + échappements de la norme freedesktop)."""
+    for car in ("\\", '"', "`", "$"):
+        arg = arg.replace(car, "\\" + car)
+    return '"' + arg.replace("\\", "\\\\").replace("%", "%%") + '"'
+
+
+def nom_fichier(nom):
+    return re.sub(r"[^a-z0-9]+", "-", nom.lower()).strip("-") or "programme"
+
+
+def ecrire_desktop(chemin, nom, exec_, icone, commentaire, categories):
+    nom = " ".join(nom.split())
+    APPLIS.mkdir(parents=True, exist_ok=True)
+    chemin.write_text("[Desktop Entry]\nType=Application\n"
+                      f"Name={nom}\nComment={commentaire}\nExec={exec_}\nIcon={icone}\nCategories={categories}\n"
+                      "Terminal=false\nX-Thomas-OS-Installateur=true\n", encoding="utf-8")
+
+
+def installer_appimage(ui, fichier, d):
+    nom = d["nom"]
+    if not ui.oui_non(f"Ajouter « {nom} » au menu ?\n\nLe fichier sera rangé dans le dossier « Applications » de ton "
+                      "dossier personnel.", oui="Ajouter"):
+        return 1
+    dossier = MAISON / "Applications"
+    dossier.mkdir(parents=True, exist_ok=True)
+    dest = dossier / fichier.name
+    if fichier.resolve() != dest.resolve():
+        shutil.move(str(fichier), str(dest))
+    dest.chmod(0o755)
+    desktop = APPLIS / f"thomas-appimage-{nom_fichier(nom)}.desktop"
+    ecrire_desktop(desktop, nom, quoter_exec(str(dest)), "application-x-executable", "AppImage", "Utility;")
+    print(f"OK       {nom} : {dest} + {desktop}", flush=True)
+    journal("AppImage :", dest, desktop)
+    ui.notifier(f"{nom} est ajouté", "Tu le trouves dans le menu.")
+    if ui.oui_non(f"{nom} est dans le menu.\n\nL'ouvrir maintenant ?", oui="Ouvrir", non="Plus tard", auto=False):
+        subprocess.Popen([str(dest)], cwd=str(dossier), start_new_session=True)
+    return 0
+
+
+# --- programmes Windows (Proton par umu-run) ---------------------------------------------------------------------------
+def env_windows():
+    e = dict(os.environ)
+    e.update(WINEPREFIX=str(PREFIXE), GAMEID="umu-default", STORE="none")
+    return e
+
+
+def lecteur_c():
+    for c in (PREFIXE / "drive_c", PREFIXE / "pfx" / "drive_c"):
+        if c.is_dir():
+            return c
+    return PREFIXE / "drive_c"
+
+
+def windows_pret():
+    return lecteur_c().is_dir()
+
+
+def raccourcis():
+    """Raccourcis .lnk du menu Démarrer et du bureau de ce « Windows »."""
+    c = lecteur_c()
+    trouves = set()
+    for base in (c / "ProgramData/Microsoft/Windows/Start Menu", c / "users"):
+        if base.is_dir():
+            for p in base.rglob("*.lnk"):
+                s = str(p).lower()
+                if "start menu" in s or "/desktop/" in s:
+                    trouves.add(p)
+    return trouves
+
+
+def cible_lnk(chemin):
+    """Programme visé par un raccourci Windows (.lnk) : « C:\\Program Files\\X\\x.exe », ou None."""
+    try:
+        d = Path(chemin).read_bytes()
+    except OSError:
+        return None
+    if len(d) >= 0x4C and d[:4] == b"L\x00\x00\x00":
+        drapeaux = int.from_bytes(d[0x14:0x18], "little")
+        pos = 0x4C
+        if drapeaux & 0x01:  # liste d'identifiants (on la saute)
+            pos += 2 + int.from_bytes(d[pos:pos + 2], "little")
+        if drapeaux & 0x02 and pos + 0x1C <= len(d):  # LinkInfo : chemin local
+            li = d[pos:]
+            entete = int.from_bytes(li[4:8], "little")
+            if int.from_bytes(li[8:12], "little") & 0x01:
+                def texte_a(o):
+                    return li[o:li.index(b"\0", o)].decode("cp1252", "replace") if 0 < o < len(li) else ""
+
+                def texte_u(o):
+                    if not 0 < o < len(li):
+                        return ""
+                    fin = o
+                    while fin + 1 < len(li) and li[fin:fin + 2] != b"\0\0":
+                        fin += 2
+                    return li[o:fin].decode("utf-16-le", "replace")
+
+                base = texte_u(int.from_bytes(li[0x1C:0x20], "little")) if entete >= 0x24 else ""
+                base = base or texte_a(int.from_bytes(li[0x10:0x14], "little"))
+                suite = texte_u(int.from_bytes(li[0x20:0x24], "little")) if entete >= 0x24 else ""
+                suite = suite or texte_a(int.from_bytes(li[0x18:0x1C], "little"))
+                if base:
+                    return base + suite
+    # Repli : un chemin « X:\…\….exe » écrit quelque part dans le raccourci (UTF-16 ou ANSI)
+    for brut, codage in ((d, "utf-16-le"), (d[1:], "utf-16-le"), (d, "cp1252")):
+        m = re.search(r"[A-Za-z]:\\[^\x00-\x1f\"*?<>|]+?\.exe", brut.decode(codage, "replace"), re.I)
+        if m:
+            return m.group(0)
+    return None
+
+
+def windows_vers_linux(cible):
+    m = re.match(r"^([A-Za-z]):\\(.*)$", cible or "")
+    if not m:
+        return None
+    lettre = m.group(1).lower()
+    p = lecteur_c() if lettre == "c" else PREFIXE / "dosdevices" / f"{lettre}:"
+    for morceau in m.group(2).split("\\"):
+        if not morceau:
+            continue
+        q = p / morceau
+        if not q.exists() and p.is_dir():  # Windows ignore les majuscules, Linux non
+            q = next((x for x in p.iterdir() if x.name.lower() == morceau.lower()), q)
+        p = q
+    return p
+
+
+def ajouter_programme_windows(lnk):
+    nom = lnk.stem
+    if re.search(r"unins|uninstall|d[ée]sinstall|readme|lisez|manual|manuel|\bhelp\b|\baide\b|website|site web", nom, re.I):
+        return None
+    cible = cible_lnk(lnk)
+    if not cible or not cible.lower().endswith(".exe"):
+        return None
+    exe = windows_vers_linux(cible)
+    if not exe or not exe.is_file():
+        journal("raccourci ignoré (programme introuvable) :", lnk, cible)
+        return None
+    desktop = APPLIS / f"thomas-windows-{nom_fichier(nom)}.desktop"
+    ecrire_desktop(desktop, nom, "thomas-installateur --lancer " + quoter_exec(str(exe)), "wine",
+                   "Programme Windows (Proton)", "Wine;")
+    journal("raccourci Windows :", nom, "→", exe, desktop)
+    print(f"OK       raccourci « {nom} » → {desktop}", flush=True)
+    return nom
+
+
+def commande_windows(fichier):
+    if fichier.name.lower().endswith(".msi"):
+        return ["umu-run", "msiexec", "/i", str(fichier)]
+    return ["umu-run", str(fichier)]
+
+
+def lancer_windows(ui, fichier):
+    premiere = not windows_pret()
+    avant = raccourcis()
+    CACHE.mkdir(parents=True, exist_ok=True)
+    log = CACHE / f"windows-{nom_fichier(fichier.stem)}.log"
+    journal("Windows :", fichier, "(1re fois)" if premiere else "", "→", log)
+    with open(log, "w", encoding="utf-8") as sortie:
+        proc = subprocess.Popen(commande_windows(fichier), env=env_windows(), cwd=str(fichier.parent),
+                                stdin=subprocess.DEVNULL, stdout=sortie, stderr=subprocess.STDOUT)
+        crees, vus = [], set(avant)
+
+        def nouveaux_raccourcis():
+            for lnk in sorted(raccourcis() - vus):
+                vus.add(lnk)
+                nom = ajouter_programme_windows(lnk)
+                if nom:
+                    crees.append(nom)
+
+        if premiere:
+            # Proton et sa base sont téléchargés avant le 1er programme : on le dit, jusqu'à ce que Wine démarre
+            with ui.attente("Première fois : Thomas OS prépare les programmes Windows.\n"
+                            "Téléchargement de Proton (environ 1 Go), puis le programme s'ouvre tout seul."):
+                while proc.poll() is None and not windows_pret():
+                    time.sleep(2)
+        while proc.poll() is None:
+            time.sleep(3)
+            nouveaux_raccourcis()
+        nouveaux_raccourcis()
+    code = proc.returncode
+    journal("Windows terminé :", fichier.name, "code", code, "raccourcis", crees)
+    print(f"INFO     programme Windows terminé (code {code}), raccourcis créés : {crees}", flush=True)
+    if crees:
+        ui.notifier(f"{crees[0]} est installé", "Tu le trouves dans le menu.")
+        ui.info("Installé ! Dans le menu : " + ", ".join(crees) + ".\n\n"
+                "Ces programmes Windows tournent avec Proton : s'il y a un souci, Windows reste là au besoin.")
+        return 0
+    if code != 0:
+        ui.erreur(f"Le programme Windows s'est arrêté avec une erreur (code {code}).\n\nCertains programmes Windows ne "
+                  f"marchent pas avec Proton. Pour eux, démarre Windows.\nDétails : {log}")
+        return 1
+    return 0
+
+
+def programme_windows(ui, fichier, d):
+    fortes = []
+    if d.get("mot"):
+        with ui.attente(f"Recherche de « {d['mot']} » dans la boutique d'applis…"):
+            fortes, _ = chercher_boutique(d["mot"])
+    if fortes:
+        app_id, nom = fortes[0]
+        tag = ui.choix(f"« {fichier.name} » est un programme Windows.\n{nom} existe aussi en version Linux dans la "
+                       "boutique.", [("boutique", f"Installer {nom} depuis la boutique (recommandé)"),
+                                     ("windows", "Lancer le programme Windows avec Proton")])
+        if tag == "boutique":
+            return installer_boutique(ui, app_id, nom)
+        if tag != "windows":
+            return 1
+    else:
+        texte = (f"« {fichier.name} » est un programme Windows.\n\n"
+                 "Thomas OS va le lancer avec Proton, la technologie de Steam qui fait tourner les programmes Windows. "
+                 "Beaucoup marchent, pas tous. Les jeux avec anti-triche (FACEIT, Valorant…) ne marchent jamais : "
+                 "pour eux, démarre Windows.")
+        if not windows_pret():
+            texte += "\n\nPremière fois : Thomas OS télécharge Proton (environ 1 Go)."
+        if not ui.oui_non(texte, oui="Lancer"):
+            return 1
+    return lancer_windows(ui, fichier)
+
+
+# --- entrée -----------------------------------------------------------------------------------------------------------
+def traiter(fichier, auto):
+    ui = Interface(auto)
+    fichier = Path(fichier).expanduser()
+    if not fichier.is_file():
+        ui.erreur(f"Fichier introuvable : {fichier}")
+        return 1
+    d = decider(fichier)
+    journal("fichier :", fichier, "→", json.dumps(d, ensure_ascii=False))
+    print(f"DECISION {fichier.name} : {json.dumps(d, ensure_ascii=False)}", flush=True)
+    genre = d["genre"]
+    if genre == "message":
+        ui.info(d["explication"])
+        return 0
+    if genre == "boutique":
+        if d["ext"] == ".appimage":
+            tag = ui.choix(f"{d['nom']} existe dans la boutique d'applis.",
+                           [("boutique", f"Installer {d['nom']} depuis la boutique (recommandé)"),
+                            ("appimage", "Ajouter ce fichier AppImage au menu")])
+            if tag == "appimage":
+                return installer_appimage(ui, fichier, {"nom": joli_nom(fichier)})
+            if tag != "boutique":
+                return 1
+        return installer_boutique(ui, d["id"], d["nom"], d["explication"])
+    if genre == "windows":
+        return programme_windows(ui, fichier, d)
+    if genre == "appimage":
+        return installer_appimage(ui, fichier, d)
+    if genre == "recherche":
+        return rechercher(ui, fichier, d)
+    ui.info(f"Thomas OS ne sait pas installer « {fichier.name} ».\n\nLes applis s'installent depuis Bazaar (la boutique).")
+    return 2
+
+
+def lancer(exe):
+    exe = Path(exe)
+    if not exe.is_file():
+        Interface(False).erreur(f"Programme Windows introuvable :\n{exe}\n\nIl a peut-être été désinstallé.")
+        return 1
+    os.chdir(exe.parent)
+    os.execvpe("umu-run", ["umu-run", str(exe)], env_windows())
+
+
+def verifier():
+    """Auto-test sans Internet ni écran (build de l'image)."""
+    attendu = {
+        "steam_latest.deb": ("boutique", "com.valvesoftware.Steam"),
+        "SteamSetup.exe": ("boutique", "com.valvesoftware.Steam"),
+        "SteamSetup (1).exe": ("boutique", "com.valvesoftware.Steam"),
+        "EpicInstaller-18.8.1.msi": ("boutique", HEROIC),
+        "EpicGamesLauncherInstaller.msi": ("boutique", HEROIC),
+        "discord-0.0.76.deb": ("boutique", "com.discordapp.Discord"),
+        "DiscordSetup.exe": ("boutique", "com.discordapp.Discord"),
+        "OBS-Studio-31.0-Windows-Installer.exe": ("boutique", "com.obsproject.Studio"),
+        "Obsidian-1.7.7.exe": ("boutique", "md.obsidian.Obsidian"),
+        "OperaGXSetup.exe": ("boutique", "com.opera.opera-gx"),
+        "RobloxPlayerInstaller.exe": ("boutique", "org.vinegarhq.Sober"),
+        "RobloxStudioInstaller.exe": ("boutique", "org.vinegarhq.Vinegar"),
+        "VSCodeUserSetup-x64-1.95.3.exe": ("message", None),
+        "FACEIT-setup.exe": ("message", None),
+        "amd-software-adrenalin-edition-25.1.1.exe": ("message", None),
+        "monjeu.exe": ("windows", None),
+        "installeur-test.exe": ("windows", None),
+        "Appli-1.0-x86_64.AppImage": ("appimage", None),
+        "truc_1.2.3_amd64.deb": ("recherche", None),
+        "heroic-2.15.2.x86_64.rpm": ("boutique", HEROIC),
+    }
+    erreurs = 0
+    for nom, (genre, app_id) in attendu.items():
+        d = decider(Path(nom))
+        if d["genre"] != genre or (app_id and d.get("id") != app_id):
+            print(f"ECHEC    {nom} : {d} (attendu {genre} {app_id or ''})")
+            erreurs += 1
+    for texte, mot in (("discord 0 0 76", "discord"), ("obs studio 31 0 windows installer", "obs studio"),
+                       ("truc 1 2 3 amd64", "truc"), ("setup", ""), ("signal desktop 7 2", "signal")):
+        if deviner(texte) != mot:
+            print(f"ECHEC    deviner({texte!r}) = {deviner(texte)!r} (attendu {mot!r})")
+            erreurs += 1
+    q = quoter_exec('/home/a b/x$"y\\z.AppImage')
+    if q != '"/home/a b/x\\\\$\\\\"y\\\\\\\\z.AppImage"':
+        print(f"ECHEC    quoter_exec : {q}")
+        erreurs += 1
+    # Raccourci Windows minimal (LinkInfo avec chemin local ANSI), puis chemin Linux dans un faux « Windows »
+    global PREFIXE
+    ancien = PREFIXE
+    with tempfile.TemporaryDirectory() as t:
+        PREFIXE = Path(t)
+        exe = Path(t) / "drive_c/Program Files/Thomas Test/appli-test.exe"
+        exe.parent.mkdir(parents=True)
+        exe.write_bytes(b"MZ")
+        chemin = b"C:\\PROGRAM FILES\\Thomas Test\\appli-test.exe\0"
+        li = (0x1C + len(chemin) + 1).to_bytes(4, "little") + (0x1C).to_bytes(4, "little") + (1).to_bytes(4, "little")
+        li += (0x1C).to_bytes(4, "little") + (0x1C).to_bytes(4, "little") + (0).to_bytes(4, "little")
+        li += (0x1C + len(chemin)).to_bytes(4, "little") + chemin + b"\0"
+        lnk = Path(t) / "drive_c/ProgramData/Microsoft/Windows/Start Menu/Programs/Thomas Test.lnk"
+        lnk.parent.mkdir(parents=True)
+        lnk.write_bytes(b"L\0\0\0" + bytes(16) + (0x02).to_bytes(4, "little") + bytes(0x4C - 0x18) + li)
+        trouve = windows_vers_linux(cible_lnk(lnk))
+        if trouve != exe or raccourcis() != {lnk}:
+            print(f"ECHEC    raccourci Windows : {cible_lnk(lnk)} → {trouve} ; raccourcis {raccourcis()}")
+            erreurs += 1
+    PREFIXE = ancien
+    for outil in ("kdialog", "flatpak", "umu-run", "notify-send", "gdbus"):
+        if not shutil.which(outil):
+            print(f"ECHEC    outil absent : {outil}")
+            erreurs += 1
+    print(f"installateur : {len(attendu)} fichiers testés, {erreurs} erreur(s)")
+    return 1 if erreurs else 0
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if argv else 2
+    if argv[0] == "--verifier":
+        return verifier()
+    if argv[0] == "--choix":
+        for f in argv[1:]:
+            print(json.dumps({"fichier": f, **decider(Path(f))}, ensure_ascii=False))
+        return 0
+    if argv[0] == "--lancer" and len(argv) == 2:
+        return lancer(argv[1])
+    if argv[0] == "--oui" and len(argv) == 2:
+        return traiter(argv[1], auto=True)
+    return traiter(argv[0], auto=False)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

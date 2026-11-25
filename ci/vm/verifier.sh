@@ -26,6 +26,23 @@ style_core() {
     runuser -u testeur -- env DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${u}/bus" gdbus call --session \
         --dest org.thomasos.Core --object-path /org/thomasos/Core --method "org.thomasos.Style1.$1" "${@:2}" 2>&1
 }
+# Installateur : une commande lancée comme dans la vraie session de « testeur » (environnement de son plasmashell :
+# écran X/Wayland pour Wine/Proton, bus de session…), et son dossier Téléchargements
+comme_testeur() {
+    local p
+    local -a e
+    p="$(pgrep -u testeur -x plasmashell | head -1)"
+    mapfile -t e < <(tr '\0' '\n' <"/proc/${p}/environ" | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XAUTHORITY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|XDG_CURRENT_DESKTOP|XDG_SESSION_TYPE|KDE_FULL_SESSION|KDE_SESSION_VERSION|LANG|LANGUAGE|PATH|HOME|USER|LOGNAME|XDG_DATA_DIRS|XDG_CONFIG_DIRS|QT_QPA_PLATFORMTHEME)=')
+    runuser -u testeur -- env -i "${e[@]}" "$@"
+}
+telechargements() {
+    local d maison
+    maison="$(getent passwd testeur | cut -d: -f6)"
+    d="$(comme_testeur xdg-user-dir DOWNLOAD 2>/dev/null </dev/null)"
+    [[ -n "${d}" && "${d}" != "${maison}" ]] || d="${maison}/Téléchargements"
+    comme_testeur mkdir -p "${d}" </dev/null
+    echo "${d}"
+}
 
 case "${1:-}" in
 demarrage)
@@ -381,7 +398,107 @@ applis)
     info "service des applis : $(systemctl show -p Result --value thomas-flatpak-preinstall.service)"
     info "applis Flatpak installées : $(flatpak list --app --columns=application | tr '\n' ' ')"
     ;;
+installateur-ouvrir)
+    # Installateur Thomas OS : double-clic sur un fichier téléchargé. kde-open = le même mécanisme que Dolphin (KIO).
+    tele="$(telechargements)"
+    maison="$(getent passwd testeur | cut -d: -f6)"
+    comme_testeur python3 - "${tele}" <<'EOF'
+import os, sys
+d = sys.argv[1]
+fichiers = {  # débuts de fichiers réels : le type est reconnu par le contenu, comme un vrai téléchargement
+    "SteamSetup.exe": b"MZ\x90\x00\x03" + bytes(59),
+    "steam_latest.deb": b"!<arch>\ndebian-binary   1700000000  0     0     100644  4         `\n2.0\n",
+    "EpicInstaller-18.8.1.msi": b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + bytes(56),
+    "Appli-1.0-x86_64.AppImage": b"\x7fELF\x02\x01\x01\x00AI\x02" + bytes(53),
+}
+for nom, contenu in fichiers.items():
+    open(os.path.join(d, nom), "wb").write(contenu)
+print("INFO    fichiers « téléchargés » dans", d)
+EOF
+    for t in application/x-msdownload application/x-msi application/vnd.debian.binary-package application/x-rpm application/vnd.appimage; do
+        info "${t} → $(comme_testeur gio mime "${t}" 2>&1 </dev/null | head -1)"
+    done
+    rm -f "${maison}/.cache/thomas-os/installateur.log"
+    comme_testeur kde-open "${tele}/SteamSetup.exe" </dev/null >/tmp/kde-open.log 2>&1 &
+    for _ in $(seq 30); do pgrep -u testeur -f 'thomas-installateur.*SteamSetup' >/dev/null && break; sleep 1; done
+    if pgrep -u testeur -f 'thomas-installateur.*SteamSetup' >/dev/null; then ok "double-clic sur SteamSetup.exe : l'installateur Thomas OS s'ouvre"
+    else ko "double-clic sur un .exe : installateur pas lancé ($(tr '\n' ' ' </tmp/kde-open.log | head -c 300))"; fi
+    for _ in $(seq 15); do pgrep -u testeur -x kdialog >/dev/null && break; sleep 1; done
+    if pgrep -u testeur -x kdialog >/dev/null; then ok "fenêtre de l'installateur affichée (photo 11)"; else ko "pas de fenêtre de l'installateur"; fi
+    grep -h 'fichier :' "${maison}/.cache/thomas-os/installateur.log" 2>/dev/null | tail -1 | sed 's/^/INFO    /'
+    ;;
+installateur)
+    tele="$(telechargements)"
+    maison="$(getent passwd testeur | cut -d: -f6)"
+    pkill -u testeur -x kdialog; pkill -u testeur -f 'bin/thomas-installateur'; sleep 1
+    # paquet .deb (fait pour Ubuntu) : même chemin, l'installateur propose la version boutique
+    comme_testeur kde-open "${tele}/steam_latest.deb" </dev/null >/tmp/kde-open.log 2>&1 &
+    for _ in $(seq 30); do pgrep -u testeur -f 'thomas-installateur.*steam_latest' >/dev/null && break; sleep 1; done
+    if pgrep -u testeur -f 'thomas-installateur.*steam_latest' >/dev/null; then ok "double-clic sur steam_latest.deb : installateur Thomas OS (plus Ark)"
+    else ko "double-clic sur un .deb : installateur pas lancé ($(tr '\n' ' ' </tmp/kde-open.log | head -c 300))"; fi
+    sleep 3; pkill -u testeur -x kdialog; pkill -u testeur -f 'bin/thomas-installateur'
+    # décisions sur les vrais fichiers de Thomas (Steam, Epic Games)
+    r="$(comme_testeur thomas-installateur --choix "${tele}/SteamSetup.exe" "${tele}/steam_latest.deb" "${tele}/EpicInstaller-18.8.1.msi" </dev/null)"
+    if [[ "$(grep -c '"id": "com.valvesoftware.Steam"' <<<"${r}")" == 2 && "${r}" == *'"id": "com.heroicgameslauncher.hgl"'* ]]; then
+        ok "Steam (.exe et .deb) → Steam de la boutique ; Epic Games (.msi) → Heroic"
+    else ko "décisions : ${r}"; fi
+    # AppImage : rangée dans ~/Applications et ajoutée au menu
+    comme_testeur thomas-installateur --oui "${tele}/Appli-1.0-x86_64.AppImage" </dev/null >/tmp/appimage.log 2>&1
+    d="${maison}/.local/share/applications/thomas-appimage-appli.desktop"
+    if [[ -x "${maison}/Applications/Appli-1.0-x86_64.AppImage" && -f "${d}" ]] && grep -q '^Exec="' "${d}"; then
+        ok "AppImage rangée dans ~/Applications et ajoutée au menu"
+    else ko "AppImage : $(tail -3 /tmp/appimage.log | tr '\n' ' ')"; fi
+    if command -v desktop-file-validate >/dev/null; then
+        if v="$(desktop-file-validate "${d}" /usr/share/applications/org.thomasos.installateur.desktop 2>&1)"; then ok "raccourcis valides (desktop-file-validate)"
+        else ko "raccourcis : ${v}"; fi
+    fi
+    ;;
+installateur-boutique)
+    # Vraie installation depuis la boutique (Internet) : Epic Games → Heroic, comme Thomas le ferait
+    tele="$(telechargements)"
+    debut=$SECONDS
+    comme_testeur timeout 900 thomas-installateur --oui "${tele}/EpicInstaller-18.8.1.msi" </dev/null >/tmp/boutique.log 2>&1
+    if flatpak info com.heroicgameslauncher.hgl >/dev/null 2>&1 || comme_testeur flatpak info com.heroicgameslauncher.hgl >/dev/null 2>&1 </dev/null; then
+        ok "EpicInstaller.msi → Heroic installé depuis la boutique en $((SECONDS - debut)) s ($(grep -oE 'installé \((system|user)\)' /tmp/boutique.log | head -1))"
+    else ko "Heroic pas installé : $(tail -4 /tmp/boutique.log | tr '\n' ' ')"; fi
+    # toutes les applis que l'installateur connaît existent bien sur Flathub
+    ids="$(python3 - <<'EOF'
+import importlib.machinery, importlib.util
+l = importlib.machinery.SourceFileLoader("ti", "/usr/bin/thomas-installateur")
+m = importlib.util.module_from_spec(importlib.util.spec_from_loader("ti", l))
+l.exec_module(m)
+print(" ".join(sorted({c[1] for c in m.CONNUS if c[1]})))
+EOF
+)"
+    manquants=""
+    for i in ${ids}; do flatpak remote-info flathub "${i}" >/dev/null 2>&1 || manquants+=" ${i}"; done
+    if [[ -z "${manquants}" ]]; then ok "les $(wc -w <<<"${ids}") applis connues de l'installateur existent sur Flathub"
+    else ko "introuvables sur Flathub :${manquants}"; fi
+    ;;
+installateur-windows)
+    # Programme Windows avec Proton (Internet : Proton est téléchargé la 1re fois). installeur-test.exe (compilé sur
+    # GitHub) copie appli-test.exe dans « C:\Program Files\Thomas Test » et crée son raccourci du menu Démarrer.
+    tele="$(telechargements)"
+    maison="$(getent passwd testeur | cut -d: -f6)"
+    install -o testeur -g testeur -m 0644 /tmp/appli-test.exe /tmp/installeur-test.exe "${tele}/"
+    debut=$SECONDS
+    comme_testeur timeout 1500 thomas-installateur --oui "${tele}/installeur-test.exe" </dev/null >/tmp/windows.log 2>&1
+    rc=$?
+    info "programme Windows : code ${rc} en $((SECONDS - debut)) s"
+    tail -6 /tmp/windows.log | sed 's/^/INFO    /'
+    d="${maison}/.local/share/applications/thomas-windows-thomas-test.desktop"
+    if [[ -f "${d}" ]]; then ok "programme Windows installé avec Proton : « Thomas Test » ajouté au menu"
+    else
+        ko "programme Windows : pas de raccourci dans le menu ; journal de Proton :"
+        tail -15 "${maison}"/.cache/thomas-os/windows-installeur-test.log 2>/dev/null | sed 's/^/INFO    /'
+    fi
+    exe="$(sed -nE 's/^Exec=thomas-installateur --lancer "(.*)"$/\1/p' "${d}" 2>/dev/null)"
+    rm -f "$(dirname "${exe:-/x}")/thomas-test-ok.txt"
+    [[ -n "${exe}" ]] && comme_testeur timeout 300 thomas-installateur --lancer "${exe}" </dev/null >/tmp/lancer.log 2>&1
+    if [[ -n "${exe}" && -f "$(dirname "${exe}")/thomas-test-ok.txt" ]]; then ok "le raccourci du menu lance le programme Windows (il a écrit son fichier)"
+    else ko "programme Windows pas lancé par son raccourci : $(tail -3 /tmp/lancer.log 2>/dev/null | tr '\n' ' ')"; fi
+    ;;
 *)
-    echo "usage : verifier.sh demarrage|preparer|session|bienvenue|bienvenue-fermee|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|phase8|control-pages|systeme|systeme-bascule|applis"; exit 2 ;;
+    echo "usage : verifier.sh demarrage|preparer|session|bienvenue|bienvenue-fermee|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|phase8|control-pages|systeme|systeme-bascule|applis|installateur-ouvrir|installateur|installateur-boutique|installateur-windows"; exit 2 ;;
 esac
 exit $((erreurs > 0))
