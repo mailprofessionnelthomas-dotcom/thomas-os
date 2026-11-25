@@ -194,7 +194,7 @@ jobs:
           #  ou bien le tri se fait ici, sur le runner)
           # la clé proposée par l'installateur (même recherche que iso/hook_postrootfs.sh) est-elle enregistrée ?
           cle="$(${SSH} 'f="$(find /etc/pki/akmods /usr/share/ublue-os -name "*.der" 2>/dev/null | head -1)"; mokutil --test-key "${f}"' 2>&1 || true)"
-          if [[ "${cle}" == *"already enrolled"* ]]; then ok "clé Secure Boot de Thomas OS enregistrée (écran MOK) : ${cle}"; else ko "clé Secure Boot pas enregistrée : ${cle:-?}"; fi
+          if [[ "${cle}" == *"already enrolled"* ]]; then ok "clé Secure Boot de Thomas OS enregistrée (écran MOK) : $(grep 'already enrolled' <<<"${cle}" | head -1)"; else ko "clé Secure Boot pas enregistrée : ${cle:-?}"; fi
           if ${SSH} cat /usr/lib/os-release 2>/dev/null | grep -q '^NAME="Thomas OS"'; then ok "c'est bien Thomas OS"; else ko "os-release"; fi
           suivi="$(${SSH} rpm-ostree status --booted --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["deployments"][0].get("container-image-reference",""))' || true)"
           if [[ "${suivi}" == *thomas-os:${{ inputs.canal }}* ]]; then ok "mises à jour : suit ${suivi}"; else ko "image suivie : ${suivi:-?}"; fi
