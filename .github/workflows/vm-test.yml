@@ -195,6 +195,7 @@ jobs:
       # Installateur Thomas OS : double-clic sur un fichier téléchargé (.exe, .deb, .msi, .AppImage), comme sur Windows
       # Programmes Windows de test (compilés ici, jamais sur un PC) : appli-test.exe sert aussi de vrai « SteamSetup.exe »
       - name: Installateur (double-clic dans Dolphin, Steam, Epic, AppImage)
+        if: ${{ !cancelled() }}
         run: |
           sudo apt-get install -y -qq gcc-mingw-w64-x86-64 >/dev/null
           x86_64-w64-mingw32-gcc -O2 -Wall -o appli-test.exe ci/vm/windows/appli-test.c

@@ -384,7 +384,14 @@ systeme)
             etat="$(aide Etat)"
             if [[ "$(champ windows <<<"${etat}")" == oui ]]; then ok "Windows détecté dans les entrées UEFI (fausse entrée Boot${num})"; else ko "Windows pas détecté : ${etat}"; fi
             r="$(aide RedemarrerWindows b false)"
-            if efibootmgr | grep -q "^BootNext: ${num}"; then ok "« redémarrer sur Windows » : démarrage suivant réglé sur Boot${num} (${r})"; else ko "BootNext pas réglé : ${r}"; fi
+            # relu plusieurs fois : une fois (run 45713419172), BootNext n'était pas encore visible juste après la réponse
+            for _ in 1 2 3 4 5; do efibootmgr | grep -q "^BootNext: ${num}" && break; sleep 2; done
+            if efibootmgr | grep -q "^BootNext: ${num}"; then ok "« redémarrer sur Windows » : démarrage suivant réglé sur Boot${num} (${r})"
+            else
+                ko "BootNext pas réglé : ${r}"
+                efibootmgr | head -12 | sed 's/^/INFO    efibootmgr : /'
+                journalctl -u thomas-systeme --no-pager | tail -6 | sed 's/^/INFO    /'
+            fi
             if [[ "$(efibootmgr | grep -E '^BootOrder' || true)" == "${avant}" ]]; then ok "ordre de démarrage inchangé"; else ko "ordre de démarrage modifié"; fi
             efibootmgr -q -N >/dev/null 2>&1; efibootmgr -q -b "${num}" -B >/dev/null 2>&1
             if efibootmgr | grep -qE "^BootNext|Windows Boot Manager"; then ko "fausse entrée Windows pas nettoyée"; else ok "fausse entrée Windows supprimée"; fi
