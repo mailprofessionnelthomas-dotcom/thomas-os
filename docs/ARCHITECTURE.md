@@ -150,8 +150,8 @@ Une seule source pour les couleurs, utilisée partout : thème Plasma, applis, �
 | Logo T (SVG, plusieurs tailles, version monochrome) | `…/identite/logo/` + `/usr/share/icons/hicolor/*/apps/thomas-os.*` |
 | Fonds d'écran (noir et rouge abstrait + T) | `/usr/share/wallpapers/ThomasOS/` (format paquet de fond KDE) |
 | Composants QML partagés (Carte, Interrupteur, Bouton, Barre latérale, Jauge) | module QML `org.thomasos.ui`, installé dans `/usr/lib64/qt6/qml/org/thomasos/ui/` |
-| Démarrage (logo T animé) | thème Plymouth `thomas-os` |
-| Écran de connexion | thème pour **Plasma Login Manager** (constaté : c'est le gestionnaire de connexion de Bazzite, pas SDDM) |
+| Démarrage (logo T animé) | thème Plymouth `thomas-os`, fabriqué au build par `identite/plymouth.py` ; il est copié dans l'initramfs, refait au build (garde-fou : aucun module dracut perdu) ; la clé impose `rhgb quiet` |
+| Écran de connexion | **Plasma Login Manager** (constaté : c'est le gestionnaire de connexion de Bazzite, pas SDDM) : fond Thomas OS réglé dans `/usr/lib/plasmalogin/defaults.conf` (là où Bazzite met le sien) |
 
 **Règle :**
 - Le style « Thomas OS » par défaut, le thème Plasma, le module `org.thomasos.ui`, Plymouth et l'écran de connexion lisent les **mêmes jetons**. Changer le rouge à un endroit le change partout au build suivant.
@@ -229,7 +229,7 @@ core/
   thomas_os/           paquet Python (styles, config, systeme, diagnostic)
   bin/                 thomas, thomas-style, thomas-core (service D-Bus)
   dbus/ polkit/        fichiers .service, .conf, .policy
-identite/              tokens.json, logo/, fonds/, plymouth/, connexion/
+identite/              tokens.json, logo/, fond.py (fond d'écran), plymouth.py (logo de démarrage)
 system_files/          fichiers copiés tels quels (comme aujourd'hui)
 build_files/           build.sh (+ installation des composants ci-dessus)
 studio/                prototype web (outil de maquette)
@@ -279,5 +279,5 @@ docs/                  ARCHITECTURE.md, guides
 | 6 | Thomas Studio natif | VM : style modifié → enregistré → maquette ; appliqué → photo comparée ; annulé → style d'avant |
 | 7 | Thomas Welcome (+ masquer Bazzite Portal) | VM : 1re session (Welcome ouvert, Portal absent, 7 étapes, fermé = ne revient plus) |
 | 8 | Intégration : nettoyage, gaming, températures, diagnostic réseau | VM (faux jeu Steam, faux capteur à 99 °C, coût mesuré de chaque vérification) ; gain en jeu à mesurer sur le PC réel |
-| 9 | ISO live, installation, dual boot, Secure Boot (MOK), logo animé au démarrage | VM avec Secure Boot |
+| 9 | ISO live, installation, dual boot, Secure Boot (MOK), logo animé au démarrage | VM avec Secure Boot. Vérifié le 25/11/2026 : installation complète depuis la clé (Secure Boot actif, écran MOK, démarrage graphique), logo T au démarrage et fond Thomas OS à l'écran de connexion (photos analysées). Reste : aide système polkit (canal, variante NVIDIA, Windows) |
 | 10 | Validation sur matériel réel, guides | PC réel (par le propriétaire) |

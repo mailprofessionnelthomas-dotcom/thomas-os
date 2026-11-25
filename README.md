@@ -8,7 +8,7 @@ look façon Windows 11, zéro pub, zéro télémétrie, jeux prêts à l'emploi,
 Il s'installe sur **n'importe quel PC** (x86 64 bits, Intel ou AMD) depuis une **clé USB live** : on teste sans rien installer, puis on installe quand on veut.
 
 > 🚧 **En construction.** Les images système se construisent toutes seules sur GitHub et passent un test de démarrage en machine virtuelle.
-> **Clé USB :** dans les [Releases](https://github.com/mailprofessionnelthomas-dotcom/thomas-os/releases) (« Clé USB Thomas OS »). Elle a démarré en machine virtuelle avec Secure Boot activé, mais n'est pas encore testée sur un vrai PC. Le guide pas à pas, avec Windows à côté : [docs/INSTALLATION.md](docs/INSTALLATION.md).
+> **Clé USB :** dans les [Releases](https://github.com/mailprofessionnelthomas-dotcom/thomas-os/releases) (« Clé USB Thomas OS »). Chaque clé publiée est testée en machine virtuelle avec Secure Boot activé : démarrage, installation complète, écran MOK, puis 1er démarrage du système installé. Elle n'est pas encore testée sur un vrai PC. Le guide pas à pas, avec Windows à côté : [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
 ## Quelle version pour quelle carte graphique ?
 

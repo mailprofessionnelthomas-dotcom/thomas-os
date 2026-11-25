@@ -89,7 +89,7 @@ Photos de ces écrans (prises en VM) : `captures/vm/mok-1-menu.png` à `mok-4-re
 
 ## 7. Ensuite
 
-- **Au démarrage :** un menu propose Thomas OS (par défaut) ou Windows.
+- **Au démarrage :** un menu propose Thomas OS (par défaut) ou Windows. Ensuite, le logo T rouge de Thomas OS s'affiche pendant le chargement (photo : `captures/vm/logo-demarrage.png`), puis l'écran de connexion (`captures/vm/ecran-connexion.png`).
 - **Thomas Welcome** s'ouvre au 1er login : connexion, carte graphique, style, préférences.
 - **Les applis** (Opera GX, Firefox, Spotify…) s'installent toutes seules dès que tu es connecté à Internet.
 - **Si quelque chose ne va pas :** Windows reste toujours accessible, par le menu de démarrage du PC (« Windows Boot Manager »).
