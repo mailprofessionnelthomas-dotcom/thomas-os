@@ -210,7 +210,8 @@ jobs:
           sleep 5
           python3 ci/vm/photo.py /tmp/qemu-mon resultats/11b-apres-double-clic.png
           if ! bash ci/vm/dans-la-vm.sh installateur-etat >>resultats/rapport.txt; then
-            python3 ci/vm/touches.py /tmp/qemu-mon ret  # « Exécuter » demandé par KDE
+            # KDE demande « Lancer ce fichier ? » (constaté, photo 11b) : Entrée = Annuler, donc Maj+Tab sur « Lancer » + Espace
+            python3 ci/vm/touches.py /tmp/qemu-mon shift-tab spc
             sleep 6
           fi
           python3 ci/vm/photo.py /tmp/qemu-mon resultats/11c-installateur-steam.png

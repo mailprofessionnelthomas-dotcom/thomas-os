@@ -206,7 +206,8 @@ command -v efibootmgr >/dev/null || dnf5 -y install efibootmgr
 chmod 0755 /usr/bin/thomas-installateur
 python3 - <<'EOF'
 import os
-TYPES = ["application/x-msdownload", "application/x-ms-dos-executable", "application/x-dosexec", "application/x-msi",
+TYPES = ["application/vnd.microsoft.portable-executable", "application/x-msdownload", "application/x-ms-dos-executable",
+         "application/x-dosexec", "application/x-msi",
          "application/x-ms-win-installer", "application/vnd.debian.binary-package", "application/x-deb",
          "application/x-rpm", "application/x-redhat-package-manager", "application/vnd.appimage",
          "application/x-iso9660-appimage"]
@@ -402,7 +403,8 @@ command -v efibootmgr >/dev/null || { echo "ERREUR : efibootmgr absent"; exit 1;
 # Installateur : décisions (Steam, Epic → Heroic, .exe, AppImage…), raccourcis Windows, outils (umu-run…), et
 # double-clic sur ces fichiers = installateur (résolution par GLib, avec les listes propres à KDE)
 /usr/bin/thomas-installateur --verifier
-for t in application/x-msdownload application/x-msi application/vnd.debian.binary-package application/x-rpm application/vnd.appimage; do
+for t in application/vnd.microsoft.portable-executable application/x-msdownload application/x-msi \
+         application/vnd.debian.binary-package application/x-rpm application/vnd.appimage; do
     defaut="$(LC_ALL=C XDG_CURRENT_DESKTOP=KDE gio mime "${t}" 2>&1 || true)"
     [[ "${defaut%%$'\n'*}" == *org.thomasos.installateur.desktop* ]] \
         || { echo "ERREUR : ${t} ne s'ouvre pas avec l'installateur : ${defaut%%$'\n'*}"; exit 1; }

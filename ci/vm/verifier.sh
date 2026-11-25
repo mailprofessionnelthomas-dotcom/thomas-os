@@ -421,7 +421,7 @@ applis)
 installateur-ouvrir)
     # Installateur Thomas OS : le vrai double-clic dans Dolphin. Ici : écran rallumé et déverrouillé (veille constatée
     # en VM à ce moment du test), fichiers « téléchargés », Dolphin ouvert sur SteamSetup.exe sélectionné. Le runner
-    # appuie ensuite sur Entrée (= double-clic), puis sur « Exécuter » si KDE le demande, et prend les photos 11a à 11c.
+    # appuie ensuite sur Entrée (= double-clic), puis sur « Lancer » si KDE le demande, et prend les photos 11a à 11c.
     loginctl unlock-sessions 2>/dev/null
     comme_testeur kwriteconfig6 --file kscreenlockerrc --group Daemon --key Autolock false </dev/null
     comme_testeur kwriteconfig6 --file powerdevilrc --group AC --group Display --key TurnOffDisplayWhenIdle false </dev/null
@@ -454,9 +454,9 @@ EOF
     else ko "Dolphin pas ouvert"; fi
     ;;
 installateur-etat)
-    # après Entrée dans Dolphin : l'installateur est-il déjà ouvert ? (sinon KDE demande « Exécuter ? »)
+    # après Entrée dans Dolphin : l'installateur est-il déjà ouvert ? (sinon KDE demande « Lancer ce fichier ? »)
     if pgrep -u testeur -f 'thomas-installateur.*SteamSetup' >/dev/null; then info "après Entrée : installateur déjà ouvert"; exit 0; fi
-    info "après Entrée : installateur pas encore ouvert (KDE demande « Exécuter ? », photo 11b)"
+    info "après Entrée : installateur pas encore ouvert (KDE demande « Lancer ce fichier ? », photo 11b)"
     exit 3
     ;;
 installateur)
@@ -469,7 +469,7 @@ installateur)
     else ko "double-clic dans Dolphin sur SteamSetup.exe : pas de fenêtre de l'installateur (photos 11a à 11c)"; fi
     grep -h 'fichier :' "${maison}/.cache/thomas-os/installateur.log" 2>/dev/null | tail -1 | sed 's/^/INFO    /'
     pkill -u testeur -x kdialog; pkill -u testeur -f 'bin/thomas-installateur'; pkill -u testeur -x dolphin; sleep 1
-    # 2. même chemin sans clavier : .exe (comme après « Exécuter », kioclient exec), .deb et .msi (kde-open)
+    # 2. même chemin sans clavier : .exe (comme après « Lancer », kioclient exec), .deb et .msi (kde-open)
     kio="$(command -v kioclient6 || command -v kioclient || echo kioclient)"
     if ouvre_installateur SteamSetup "${kio}" exec "${tele}/SteamSetup.exe"; then ok "SteamSetup.exe ouvert par KDE → installateur Thomas OS"
     else ko "SteamSetup.exe ouvert par KDE : installateur pas lancé ($(tr '\n' ' ' </tmp/ouvrir.log | head -c 300))"; fi

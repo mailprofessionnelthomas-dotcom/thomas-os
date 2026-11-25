@@ -99,6 +99,7 @@ Photos de ces écrans (prises en VM) : `captures/vm/mok-1-menu.png` à `mok-4-re
     - Steam, Discord… : il installe la version boutique ;
     - Epic Games : il installe **Heroic**, qui le remplace sous Linux ;
     - les autres `.exe` : il les lance avec Proton. Beaucoup marchent, pas tous. Les jeux avec anti-triche ne marchent jamais.
+  - Pour un `.exe`, KDE demande d'abord « Lancer ce fichier ? » (sécurité, comme l'avertissement de Windows) : clique sur **Lancer**.
 - **Si quelque chose ne va pas :** Windows reste toujours accessible, par le menu de démarrage du PC (« Windows Boot Manager »).
 - **Changer de canal ou de version (carte graphique) :** Thomas Control → Système (mot de passe administrateur), puis redémarre. Photo : `captures/vm/control-systeme.png`.
 
