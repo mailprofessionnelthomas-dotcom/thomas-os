@@ -46,7 +46,9 @@ Kirigami.ScrollablePage {
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
                 opacity: 0.75
-                text: "stable : les versions validées (conseillé). testing : les nouveautés d'abord, testées en machine virtuelle."
+                text: (Controle.systeme.canal !== undefined && !page.canaux.includes(Controle.systeme.canal)
+                       ? "Actuellement : version figée (" + Controle.systeme.canal + "), sans mises à jour. " : "")
+                      + "stable : les versions validées (conseillé). testing : les nouveautés d'abord, testées en machine virtuelle."
             }
             RowLayout {
                 Kirigami.FormData.label: "Variante :"

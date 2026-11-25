@@ -72,7 +72,7 @@
 |---|---|---|
 | `org.thomasos.Style1` | `Liste() → a(ss)`, `Actuel() → s`, `Appliquer(s id, s disposition)`, `Secours()`, `Annuler()`, `PeutAnnuler() → b` ; pour le Studio : `Catalogue() → s` (JSON), `Lire(s id) → s` (JSON), `Enregistrer(s id, s reglagesJson) → (s id, as corrections)`, `Importer(s chemin .conf/.json) → (s id, as corrections)`, `Exporter(s id, s chemin)`, `Supprimer(s id)` | `StyleChange(s id)`, `ListeChange()` |
 | `org.thomasos.Config1` | `Lire(s section, s cle) → s`, `Ecrire(s section, s cle, s valeur)` (faits, phase 7, dans `~/.config/thomas-os/thomas.conf`) ; `Sauvegarder() → s fichier`, `Restaurer(s fichier)` (à faire) | `ConfigChange(s section, s cle)` |
-| `org.thomasos.Systeme1` (lecture seule) | `Infos() → a{ss}` (version, variante, canal, base), `CarteGraphique() → a{ss}` (détectée / attendue), `Reseau() → a{ss}` (etat, type, nom), `Energie() → a{ss}` (profil, profils, jeu), `ChoisirEnergie(s profil)`, `WindowsPresent() → b` (à faire) | — |
+| `org.thomasos.Systeme1` (lecture seule) | `Infos() → a{ss}` (version, variante, canal, base), `CarteGraphique() → a{ss}` (détectée / attendue), `Reseau() → a{ss}` (etat, type, nom), `Energie() → a{ss}` (profil, profils, jeu), `ChoisirEnergie(s profil)` (Windows présent : dans `Etat()` de l'aide système, qui lit les entrées UEFI en root) | — |
 | `org.thomasos.Diagnostic1` | `Rapport() → s` (texte : services en échec, espace disque, températures), `Temperatures() → a(sdd)` (nom, °C, limite), `TestReseau() → a{ss}` (latence, stabilité, DNS, signal Wi-Fi), `TestDebit() → a{ss}`, `Nettoyage() → a{ss}` (dernier nettoyage) | `Alerte(s type, s message)` (à faire : les alertes passent aujourd'hui par `thomas-surveillance`) |
 
 **Règles :**
@@ -81,13 +81,14 @@
 
 ### 3.3 Aide système `org.thomasos.Systeme` (bus système)
 
-- **Rôle :** pour les rares actions qui exigent root :
-  - changer de canal (`bootc switch …:testing/stable`) ;
-  - changer de variante GPU ;
-  - « redémarrer sur Windows » (`systemctl reboot --boot-loader-entry=…`, à vérifier sur le matériel) ;
-  - nettoyage système (`flatpak uninstall --unused`, `rpm-ostree cleanup`).
-- **Autorisation :** chaque action est une action **polkit** (`org.thomasos.systeme.*`), avec mot de passe administrateur. Pas de sudo caché.
-- **Démarrage :** à la demande (activation D-Bus système). Le service sort quand l'action est finie.
+- **Rôle :** pour les rares actions qui exigent root. Fait (phase 9, `/usr/libexec/thomas-systeme`, interface `org.thomasos.Systeme1`) :
+  - `Etat() → a{ss}` : canal, variante, image suivie, changement en attente, travail en cours, Windows présent ;
+  - `ChangerCanal(s)` (`testing`/`stable`) et `ChangerVariante(s)` (3 variantes) : `bootc switch` en fond, signaux `Progression(s action, s ligne)` et `Fini(s action, b ok, s message)`, appliqué au prochain redémarrage. L'image est toujours prise dans le registre de Thomas OS (`info.env`) : aucune commande libre ;
+  - `RedemarrerWindows(b maintenant)` : démarrage suivant sur « Windows Boot Manager » (UEFI `BootNext`, une seule fois). GRUB n'a pas l'interface de `systemctl reboot --boot-loader-entry`, d'où `efibootmgr`. À vérifier sur le vrai PC ;
+  - nettoyage système : reste le service `thomas-nettoyage` (phase 8).
+- **Autorisation :** chaque action est une action **polkit** (`org.thomasos.systeme.canal` et `.variante` : mot de passe administrateur ; `.windows` : permis à la personne devant le PC, comme « Redémarrer »). Root passe directement, comme pour systemd. Pas de sudo caché.
+- **Démarrage :** à la demande (activation D-Bus système, `thomas-systeme.service`). Le service s'arrête 60 s après la dernière action finie.
+- **Vérifié en VM (25/11/2026)** : entrées piégées refusées, utilisateur sans mot de passe refusé par polkit, `BootNext` réglé sur une fausse entrée Windows sans toucher à l'ordre de démarrage, vrai changement de canal prêt en 229 s.
 
 ### 3.4 Mises à jour
 
@@ -279,5 +280,5 @@ docs/                  ARCHITECTURE.md, guides
 | 6 | Thomas Studio natif | VM : style modifié → enregistré → maquette ; appliqué → photo comparée ; annulé → style d'avant |
 | 7 | Thomas Welcome (+ masquer Bazzite Portal) | VM : 1re session (Welcome ouvert, Portal absent, 7 étapes, fermé = ne revient plus) |
 | 8 | Intégration : nettoyage, gaming, températures, diagnostic réseau | VM (faux jeu Steam, faux capteur à 99 °C, coût mesuré de chaque vérification) ; gain en jeu à mesurer sur le PC réel |
-| 9 | ISO live, installation, dual boot, Secure Boot (MOK), logo animé au démarrage | VM avec Secure Boot. Vérifié le 25/11/2026 : installation complète depuis la clé (Secure Boot actif, écran MOK, démarrage graphique), logo T au démarrage et fond Thomas OS à l'écran de connexion (photos analysées). Reste : aide système polkit (canal, variante NVIDIA, Windows) |
+| 9 | ISO live, installation, dual boot, Secure Boot (MOK), logo animé au démarrage | VM avec Secure Boot. Vérifié le 25/11/2026 : installation complète depuis la clé (Secure Boot actif, écran MOK, démarrage graphique), logo T au démarrage et fond Thomas OS à l'écran de connexion (photos analysées), aide système polkit (canal, variante, Windows) : 69 OK / 0 échec. À voir sur le vrai PC : vraie entrée Windows |
 | 10 | Validation sur matériel réel, guides | PC réel (par le propriétaire) |
