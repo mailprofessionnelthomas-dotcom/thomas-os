@@ -193,12 +193,26 @@ jobs:
         run: bash ci/vm/dans-la-vm.sh applis | tee -a resultats/rapport.txt
 
       # Installateur Thomas OS : double-clic sur un fichier téléchargé (.exe, .deb, .msi, .AppImage), comme sur Windows
-      - name: Installateur (double-clic, Steam, Epic, AppImage)
+      # Programmes Windows de test (compilés ici, jamais sur un PC) : appli-test.exe sert aussi de vrai « SteamSetup.exe »
+      - name: Installateur (double-clic dans Dolphin, Steam, Epic, AppImage)
         run: |
+          sudo apt-get install -y -qq gcc-mingw-w64-x86-64 >/dev/null
+          x86_64-w64-mingw32-gcc -O2 -Wall -o appli-test.exe ci/vm/windows/appli-test.c
+          x86_64-w64-mingw32-gcc -O2 -Wall -o installeur-test.exe ci/vm/windows/installeur-test.c -lole32 -luuid -lshell32
+          ${SSH} 'cat >/tmp/appli-test.exe' <appli-test.exe
+          ${SSH} 'cat >/tmp/installeur-test.exe' <installeur-test.exe
           echec=0
+          python3 ci/vm/touches.py /tmp/qemu-mon shift  # rallume l'écran (veille)
           bash ci/vm/dans-la-vm.sh installateur-ouvrir | tee -a resultats/rapport.txt || echec=1
-          sleep 2
-          python3 ci/vm/photo.py /tmp/qemu-mon resultats/11-installateur-steam.png
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/11a-dolphin.png
+          python3 ci/vm/touches.py /tmp/qemu-mon ret  # = double-clic sur le fichier sélectionné
+          sleep 5
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/11b-apres-double-clic.png
+          if ! bash ci/vm/dans-la-vm.sh installateur-etat >>resultats/rapport.txt; then
+            python3 ci/vm/touches.py /tmp/qemu-mon ret  # « Exécuter » demandé par KDE
+            sleep 6
+          fi
+          python3 ci/vm/photo.py /tmp/qemu-mon resultats/11c-installateur-steam.png
           bash ci/vm/dans-la-vm.sh installateur | tee -a resultats/rapport.txt || echec=1
           exit "${echec}"
 
@@ -213,13 +227,7 @@ jobs:
         if: ${{ !cancelled() }}
         continue-on-error: true
         timeout-minutes: 35
-        run: |
-          sudo apt-get install -y -qq gcc-mingw-w64-x86-64 >/dev/null
-          x86_64-w64-mingw32-gcc -O2 -Wall -o appli-test.exe ci/vm/windows/appli-test.c
-          x86_64-w64-mingw32-gcc -O2 -Wall -o installeur-test.exe ci/vm/windows/installeur-test.c -lole32 -luuid -lshell32
-          ${SSH} 'cat >/tmp/appli-test.exe' <appli-test.exe
-          ${SSH} 'cat >/tmp/installeur-test.exe' <installeur-test.exe
-          bash ci/vm/dans-la-vm.sh installateur-windows | tee -a resultats/rapport.txt
+        run: bash ci/vm/dans-la-vm.sh installateur-windows | tee -a resultats/rapport.txt
 
       - name: Résumé
         if: always()

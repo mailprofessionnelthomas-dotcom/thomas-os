@@ -35,6 +35,19 @@ comme_testeur() {
     mapfile -t e < <(tr '\0' '\n' <"/proc/${p}/environ" | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XAUTHORITY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|XDG_CURRENT_DESKTOP|XDG_SESSION_TYPE|KDE_FULL_SESSION|KDE_SESSION_VERSION|LANG|LANGUAGE|PATH|HOME|USER|LOGNAME|XDG_DATA_DIRS|XDG_CONFIG_DIRS|QT_QPA_PLATFORMTHEME)=')
     runuser -u testeur -- env -i "${e[@]}" "$@"
 }
+# ouvre un fichier comme KDE (commande donnée), et dit si l'installateur s'est lancé pour lui ($1 = motif du nom)
+ouvre_installateur() {
+    local motif="$1" r
+    shift
+    comme_testeur "$@" </dev/null >/tmp/ouvrir.log 2>&1 &
+    for _ in $(seq 30); do pgrep -u testeur -f "thomas-installateur.*${motif}" >/dev/null && break; sleep 1; done
+    pgrep -u testeur -f "thomas-installateur.*${motif}" >/dev/null
+    r=$?
+    sleep 2
+    pkill -u testeur -x kdialog; pkill -u testeur -f 'bin/thomas-installateur'; pkill -u testeur -f 'kde-open|kioclient'
+    sleep 1
+    return "${r}"
+}
 telechargements() {
     local d maison
     maison="$(getent passwd testeur | cut -d: -f6)"
@@ -399,14 +412,22 @@ applis)
     info "applis Flatpak installées : $(flatpak list --app --columns=application | tr '\n' ' ')"
     ;;
 installateur-ouvrir)
-    # Installateur Thomas OS : double-clic sur un fichier téléchargé. kde-open = le même mécanisme que Dolphin (KIO).
+    # Installateur Thomas OS : le vrai double-clic dans Dolphin. Ici : écran rallumé et déverrouillé (veille constatée
+    # en VM à ce moment du test), fichiers « téléchargés », Dolphin ouvert sur SteamSetup.exe sélectionné. Le runner
+    # appuie ensuite sur Entrée (= double-clic), puis sur « Exécuter » si KDE le demande, et prend les photos 11a à 11c.
+    loginctl unlock-sessions 2>/dev/null
+    comme_testeur kwriteconfig6 --file kscreenlockerrc --group Daemon --key Autolock false </dev/null
+    comme_testeur kwriteconfig6 --file powerdevilrc --group AC --group Display --key TurnOffDisplayWhenIdle false </dev/null
+    comme_testeur gdbus call --session --dest org.kde.Solid.PowerManagement --object-path /org/kde/Solid/PowerManagement \
+        --method org.kde.Solid.PowerManagement.reparseConfiguration </dev/null >/dev/null 2>&1
     tele="$(telechargements)"
     maison="$(getent passwd testeur | cut -d: -f6)"
+    # vrai programme Windows (compilé sur GitHub), sous le nom de l'installateur de Steam
+    install -o testeur -g testeur -m 0644 /tmp/appli-test.exe "${tele}/SteamSetup.exe"
     comme_testeur python3 - "${tele}" <<'EOF'
 import os, sys
 d = sys.argv[1]
 fichiers = {  # débuts de fichiers réels : le type est reconnu par le contenu, comme un vrai téléchargement
-    "SteamSetup.exe": b"MZ\x90\x00\x03" + bytes(59),
     "steam_latest.deb": b"!<arch>\ndebian-binary   1700000000  0     0     100644  4         `\n2.0\n",
     "EpicInstaller-18.8.1.msi": b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + bytes(56),
     "Appli-1.0-x86_64.AppImage": b"\x7fELF\x02\x01\x01\x00AI\x02" + bytes(53),
@@ -415,51 +436,46 @@ for nom, contenu in fichiers.items():
     open(os.path.join(d, nom), "wb").write(contenu)
 print("INFO    fichiers « téléchargés » dans", d)
 EOF
-    for t in application/x-msdownload application/x-msi application/vnd.debian.binary-package application/x-rpm application/vnd.appimage; do
-        info "${t} → $(comme_testeur gio mime "${t}" 2>&1 </dev/null | head -1)"
+    for f in SteamSetup.exe steam_latest.deb EpicInstaller-18.8.1.msi; do
+        info "${f} : type vu par KDE $(comme_testeur kmimetypefinder "${tele}/${f}" </dev/null 2>&1 | head -1)"
     done
     rm -f "${maison}/.cache/thomas-os/installateur.log"
-    comme_testeur kde-open "${tele}/SteamSetup.exe" </dev/null >/tmp/kde-open.log 2>&1 &
-    for _ in $(seq 30); do pgrep -u testeur -f 'thomas-installateur.*SteamSetup' >/dev/null && break; sleep 1; done
-    if pgrep -u testeur -f 'thomas-installateur.*SteamSetup' >/dev/null; then ok "double-clic sur SteamSetup.exe : l'installateur Thomas OS s'ouvre"
-    else
-        ko "double-clic sur un .exe : installateur pas lancé ($(tr '\n' ' ' </tmp/kde-open.log | head -c 300))"
-        # diagnostic : ce que KDE voit (type du fichier, appli préférée, dossiers de config), et le lancement en détail
-        info "kde-open encore là : $(pgrep -u testeur -a kde-open | head -2 | tr '\n' ' ')"
-        info "fenêtres ouvertes : $(pgrep -u testeur -a -f 'kde-open|kioclient|thomas-installateur|kdialog|ark' | grep -v pgrep | tr '\n' ' ' | head -c 400)"
-        for c in kmimetypefinder6 kmimetypefinder; do command -v "${c}" >/dev/null && info "${c} : $(comme_testeur "${c}" "${tele}/SteamSetup.exe" </dev/null 2>&1 | head -2 | tr '\n' ' ')"; done
-        for c in ktraderclient6 ktraderclient; do command -v "${c}" >/dev/null && info "${c} : $(comme_testeur "${c}" --mimetype application/x-msdownload </dev/null 2>&1 | grep -iE 'DesktopEntryPath|Name' | head -6 | tr '\n' ' ')"; done
-        info "session : $(tr '\0' '\n' <"/proc/$(pgrep -u testeur -x plasmashell | head -1)/environ" | grep -E '^XDG_(CONFIG|DATA)_DIRS=' | tr '\n' ' ')"
-        for f in /etc/xdg/kde-mimeapps.list /usr/share/kde-settings/kde-profile/default/xdg/kde-mimeapps.list "${maison}/.config/mimeapps.list" "${maison}/.config/kde-mimeapps.list"; do
-            [[ -f "${f}" ]] && info "${f} : $(grep -ciE 'msdownload|x-msi|debian|x-rpm|appimage' "${f}") lignes exe/msi/deb/rpm/appimage ; $(grep -iE 'msdownload' "${f}" | head -2 | tr '\n' ' ')"
-        done
-        comme_testeur env QT_LOGGING_RULES='kf.kio.*=true;kf.service.*=true' QT_FORCE_STDERR_LOGGING=1 timeout 25 kde-open "${tele}/SteamSetup.exe" </dev/null >/tmp/kde-open-diag.log 2>&1
-        info "kde-open détaillé (code $?) :"
-        grep -vE '^\s*$' /tmp/kde-open-diag.log | tail -25 | sed 's/^/INFO      /'
-        sleep 3
-        info "après : $(pgrep -u testeur -a -f 'thomas-installateur|kdialog' | grep -v pgrep | tr '\n' ' ' | head -c 300)"
-        journalctl _UID="$(id -u testeur)" --since '-3min' --no-pager 2>/dev/null | grep -iE 'installateur|kde-open|kio|desktop' | tail -12 | sed 's/^/INFO    journal : /'
-    fi
-    for _ in $(seq 15); do pgrep -u testeur -x kdialog >/dev/null && break; sleep 1; done
-    if pgrep -u testeur -x kdialog >/dev/null; then ok "fenêtre de l'installateur affichée (photo 11)"; else ko "pas de fenêtre de l'installateur"; fi
-    grep -h 'fichier :' "${maison}/.cache/thomas-os/installateur.log" 2>/dev/null | tail -1 | sed 's/^/INFO    /'
+    pkill -u testeur -x dolphin; sleep 1
+    comme_testeur dolphin --select "${tele}/SteamSetup.exe" </dev/null >/dev/null 2>&1 &
+    sleep 6
+    if pgrep -u testeur -x dolphin >/dev/null; then ok "Dolphin ouvert sur Téléchargements, SteamSetup.exe sélectionné (photo 11a)"
+    else ko "Dolphin pas ouvert"; fi
+    ;;
+installateur-etat)
+    # après Entrée dans Dolphin : l'installateur est-il déjà ouvert ? (sinon KDE demande « Exécuter ? »)
+    if pgrep -u testeur -f 'thomas-installateur.*SteamSetup' >/dev/null; then info "après Entrée : installateur déjà ouvert"; exit 0; fi
+    info "après Entrée : installateur pas encore ouvert (KDE demande « Exécuter ? », photo 11b)"
+    exit 3
     ;;
 installateur)
     tele="$(telechargements)"
     maison="$(getent passwd testeur | cut -d: -f6)"
-    pkill -u testeur -x kdialog; pkill -u testeur -f 'bin/thomas-installateur'; sleep 1
-    # paquet .deb (fait pour Ubuntu) : même chemin, l'installateur propose la version boutique
-    comme_testeur kde-open "${tele}/steam_latest.deb" </dev/null >/tmp/kde-open.log 2>&1 &
-    for _ in $(seq 30); do pgrep -u testeur -f 'thomas-installateur.*steam_latest' >/dev/null && break; sleep 1; done
-    if pgrep -u testeur -f 'thomas-installateur.*steam_latest' >/dev/null; then ok "double-clic sur steam_latest.deb : installateur Thomas OS (plus Ark)"
-    else ko "double-clic sur un .deb : installateur pas lancé ($(tr '\n' ' ' </tmp/kde-open.log | head -c 300))"; fi
-    sleep 3; pkill -u testeur -x kdialog; pkill -u testeur -f 'bin/thomas-installateur'
-    # décisions sur les vrais fichiers de Thomas (Steam, Epic Games)
+    # 1. le vrai double-clic dans Dolphin (photos 11a à 11c)
+    for _ in $(seq 10); do pgrep -u testeur -x kdialog >/dev/null && break; sleep 1; done
+    if pgrep -u testeur -f 'thomas-installateur.*SteamSetup' >/dev/null && pgrep -u testeur -x kdialog >/dev/null; then
+        ok "double-clic dans Dolphin sur SteamSetup.exe : fenêtre « Installer Steam ? » de l'installateur (photo 11c)"
+    else ko "double-clic dans Dolphin sur SteamSetup.exe : pas de fenêtre de l'installateur (photos 11a à 11c)"; fi
+    grep -h 'fichier :' "${maison}/.cache/thomas-os/installateur.log" 2>/dev/null | tail -1 | sed 's/^/INFO    /'
+    pkill -u testeur -x kdialog; pkill -u testeur -f 'bin/thomas-installateur'; pkill -u testeur -x dolphin; sleep 1
+    # 2. même chemin sans clavier : .exe (comme après « Exécuter », kioclient exec), .deb et .msi (kde-open)
+    kio="$(command -v kioclient6 || command -v kioclient || echo kioclient)"
+    if ouvre_installateur SteamSetup "${kio}" exec "${tele}/SteamSetup.exe"; then ok "SteamSetup.exe ouvert par KDE → installateur Thomas OS"
+    else ko "SteamSetup.exe ouvert par KDE : installateur pas lancé ($(tr '\n' ' ' </tmp/ouvrir.log | head -c 300))"; fi
+    if ouvre_installateur steam_latest kde-open "${tele}/steam_latest.deb"; then ok "double-clic sur steam_latest.deb → installateur Thomas OS (plus Ark)"
+    else ko "double-clic sur un .deb : installateur pas lancé ($(tr '\n' ' ' </tmp/ouvrir.log | head -c 300))"; fi
+    if ouvre_installateur EpicInstaller kde-open "${tele}/EpicInstaller-18.8.1.msi"; then ok "double-clic sur EpicInstaller.msi → installateur Thomas OS"
+    else ko "double-clic sur un .msi : installateur pas lancé ($(tr '\n' ' ' </tmp/ouvrir.log | head -c 300))"; fi
+    # 3. décisions sur les vrais fichiers de Thomas (Steam, Epic Games)
     r="$(comme_testeur thomas-installateur --choix "${tele}/SteamSetup.exe" "${tele}/steam_latest.deb" "${tele}/EpicInstaller-18.8.1.msi" </dev/null)"
     if [[ "$(grep -c '"id": "com.valvesoftware.Steam"' <<<"${r}")" == 2 && "${r}" == *'"id": "com.heroicgameslauncher.hgl"'* ]]; then
         ok "Steam (.exe et .deb) → Steam de la boutique ; Epic Games (.msi) → Heroic"
     else ko "décisions : ${r}"; fi
-    # AppImage : rangée dans ~/Applications et ajoutée au menu
+    # 4. AppImage : rangée dans ~/Applications et ajoutée au menu
     comme_testeur thomas-installateur --oui "${tele}/Appli-1.0-x86_64.AppImage" </dev/null >/tmp/appimage.log 2>&1
     d="${maison}/.local/share/applications/thomas-appimage-appli.desktop"
     if [[ -x "${maison}/Applications/Appli-1.0-x86_64.AppImage" && -f "${d}" ]] && grep -q '^Exec="' "${d}"; then
@@ -516,6 +532,6 @@ installateur-windows)
     else ko "programme Windows pas lancé par son raccourci : $(tail -3 /tmp/lancer.log 2>/dev/null | tr '\n' ' ')"; fi
     ;;
 *)
-    echo "usage : verifier.sh demarrage|preparer|session|bienvenue|bienvenue-fermee|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|phase8|control-pages|systeme|systeme-bascule|applis|installateur-ouvrir|installateur|installateur-boutique|installateur-windows"; exit 2 ;;
+    echo "usage : verifier.sh demarrage|preparer|session|bienvenue|bienvenue-fermee|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|phase8|control-pages|systeme|systeme-bascule|applis|installateur-ouvrir|installateur-etat|installateur|installateur-boutique|installateur-windows"; exit 2 ;;
 esac
 exit $((erreurs > 0))

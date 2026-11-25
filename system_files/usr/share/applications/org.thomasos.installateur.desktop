@@ -7,4 +7,4 @@ Icon=system-software-install
 Terminal=false
 NoDisplay=true
 Categories=System;
-MimeType=application/x-msdownload;application/x-ms-dos-executable;application/x-msi;application/x-ms-win-installer;application/vnd.debian.binary-package;application/x-deb;application/x-rpm;application/x-redhat-package-manager;application/vnd.appimage;application/x-iso9660-appimage;application/x-compressed-tar;application/x-xz-compressed-tar;application/x-zstd-compressed-tar;
+MimeType=application/x-msdownload;application/x-ms-dos-executable;application/x-dosexec;application/x-msi;application/x-ms-win-installer;application/vnd.debian.binary-package;application/x-deb;application/x-rpm;application/x-redhat-package-manager;application/vnd.appimage;application/x-iso9660-appimage;application/x-compressed-tar;application/x-xz-compressed-tar;application/x-zstd-compressed-tar;

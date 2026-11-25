@@ -206,7 +206,7 @@ command -v efibootmgr >/dev/null || dnf5 -y install efibootmgr
 chmod 0755 /usr/bin/thomas-installateur
 python3 - <<'EOF'
 import os
-TYPES = ["application/x-msdownload", "application/x-ms-dos-executable", "application/x-msi",
+TYPES = ["application/x-msdownload", "application/x-ms-dos-executable", "application/x-dosexec", "application/x-msi",
          "application/x-ms-win-installer", "application/vnd.debian.binary-package", "application/x-deb",
          "application/x-rpm", "application/x-redhat-package-manager", "application/vnd.appimage",
          "application/x-iso9660-appimage"]
