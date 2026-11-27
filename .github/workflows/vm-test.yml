@@ -218,16 +218,15 @@ jobs:
           bash ci/vm/dans-la-vm.sh installateur | tee -a resultats/rapport.txt || echec=1
           exit "${echec}"
 
-      # Konsole comme sur Windows (demandé par Thomas le 2026-11-27) : vraies touches, un programme de test dans Konsole
-      # note ce qu'il reçoit. Ctrl+Maj+A = tout sélectionner (sur un clavier AZERTY, la touche A est à la place du Q).
+      # Konsole comme sur Windows (demandé par Thomas le 2026-11-27) : vraies touches et vraie souris, un programme de test
+      # dans Konsole (plein écran, rempli de texte) note ce qu'il reçoit. Sélection = triple-clic sur une ligne, comme
+      # Thomas (Ctrl+Maj+A n'est pas « tout sélectionner » dans Konsole : c'est « surveiller l'activité », constaté).
       - name: Konsole (Ctrl+C copie, Ctrl+V colle, Ctrl+Maj+C arrête)
         if: ${{ !cancelled() }}
         run: |
           echec=0
           python3 ci/vm/touches.py /tmp/qemu-mon shift  # rallume l'écran (veille)
           bash ci/vm/dans-la-vm.sh konsole-ouvrir | tee -a resultats/rapport.txt || echec=1
-          a=a
-          if tail -5 resultats/rapport.txt | grep -qE '^INFO    clavier : fr'; then a=q; fi
           python3 ci/vm/photo.py /tmp/qemu-mon resultats/12a-konsole.png || true
           python3 ci/vm/touches.py /tmp/qemu-mon ctrl-c
           sleep 1
@@ -235,9 +234,13 @@ jobs:
           python3 ci/vm/touches.py /tmp/qemu-mon ctrl-shift-c
           sleep 1
           bash ci/vm/dans-la-vm.sh konsole-etat ctrl-maj-c | tee -a resultats/rapport.txt || echec=1
-          python3 ci/vm/touches.py /tmp/qemu-mon "ctrl-shift-${a}" ctrl-c
+          bash ci/vm/dans-la-vm.sh konsole-presse-papiers vide-0000 | tee -a resultats/rapport.txt || echec=1
+          python3 ci/vm/souris.py /tmp/qemu-mon bas-gauche 60,-80 triple-clic
           sleep 1
           python3 ci/vm/photo.py /tmp/qemu-mon resultats/12b-konsole-selection.png || true
+          bash ci/vm/dans-la-vm.sh konsole-etat selection | tee -a resultats/rapport.txt || echec=1
+          python3 ci/vm/touches.py /tmp/qemu-mon ctrl-c
+          sleep 1
           bash ci/vm/dans-la-vm.sh konsole-etat copie | tee -a resultats/rapport.txt || echec=1
           bash ci/vm/dans-la-vm.sh konsole-presse-papiers | tee -a resultats/rapport.txt || echec=1
           python3 ci/vm/touches.py /tmp/qemu-mon ctrl-v

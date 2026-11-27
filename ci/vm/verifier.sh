@@ -572,7 +572,8 @@ def interruption(signum, frame):
     (d / "interruptions").write_text(str(n))
 signal.signal(signal.SIGINT, interruption)
 (d / "interruptions").write_text("0")
-print("copie-test-4815", flush=True)
+for _ in range(60):  # écran rempli de texte : un triple-clic n'importe où sélectionne une ligne
+    print("copie-test-4815 " * 6, flush=True)
 (d / "pret").write_text("oui")
 while True:
     ligne = sys.stdin.readline()
@@ -581,7 +582,7 @@ while True:
             sortie.write(ligne)
 EOF
     chmod 0644 /tmp/konsole-test.py
-    comme_testeur konsole -e python3 /tmp/konsole-test.py </dev/null >/tmp/konsole.log 2>&1 &
+    comme_testeur konsole --fullscreen -e python3 /tmp/konsole-test.py </dev/null >/tmp/konsole.log 2>&1 &
     for _ in $(seq 20); do [[ -f "${d}/pret" ]] && break; sleep 1; done
     if [[ -f "${d}/pret" ]]; then ok "Konsole ouvert avec le programme de test (photo 12a)"; else ko "Konsole pas ouvert : $(tail -3 /tmp/konsole.log | tr '\n' ' ')"; fi
     echo 0 >/tmp/konsole-n
@@ -593,10 +594,11 @@ EOF
     else ko "fichier de raccourcis pas repris par Konsole (n° ${v:-?})"; head -c 600 "${f}" 2>/dev/null | sed 's/^/INFO    /'; fi
     ;;
 konsole-presse-papiers)
-    # met un texte dans le presse-papiers de la session (Klipper, sinon wl-copy)
+    # met un texte (mot simple, $2) dans le presse-papiers de la session (Klipper, sinon wl-copy)
+    texte="${2:-colle-test-2342}"
     comme_testeur gdbus call --session --dest org.kde.klipper --object-path /klipper \
-        --method org.kde.klipper.klipper.setClipboardContents 'colle-test-2342' </dev/null >/dev/null 2>&1 \
-        || { comme_testeur wl-copy 'colle-test-2342' </dev/null >/dev/null 2>&1 & sleep 1; }
+        --method org.kde.klipper.klipper.setClipboardContents "${texte}" </dev/null >/dev/null 2>&1 \
+        || { comme_testeur wl-copy "${texte}" </dev/null >/dev/null 2>&1 & sleep 1; }
     sleep 1
     ;;
 konsole-etat)
@@ -611,16 +613,23 @@ konsole-etat)
     }
     case "${2:-}" in
     ctrl-c-seul)
-        if [[ "${n}" == "$((avant + 1))" ]]; then info "Ctrl+C sans texte sélectionné : arrête la commande (comme sur Windows)"
+        if [[ "${n}" == "$((avant + 1))" ]]; then ok "Ctrl+C sans texte sélectionné : arrête la commande (comme sur Windows)"
         else info "Ctrl+C sans texte sélectionné : n'arrête pas la commande (Konsole le garde pour Copier) ; pour arrêter : Ctrl+Maj+C"; fi
         ;;
     ctrl-maj-c)
         if [[ "${n}" == "$((avant + 1))" ]]; then ok "Ctrl+Maj+C arrête la commande en cours (le programme a reçu l'interruption)"
         else ko "Ctrl+Maj+C : pas d'interruption (${avant} → ${n:-?})"; fi
         ;;
+    selection)
+        # juste après le triple-clic, avant Ctrl+C : le presse-papiers ne doit pas encore avoir le texte (sinon
+        # Klipper recopie la sélection tout seul et le test de Ctrl+C ne prouverait rien)
+        r="$(presse_papiers)"
+        if [[ "${r}" == *copie-test-4815* ]]; then ko "le presse-papiers a déjà le texte sélectionné avant Ctrl+C : test de copie impossible"
+        else info "ligne sélectionnée à la souris (photo 12b), presse-papiers pas encore touché (${r:0:60})"; fi
+        ;;
     copie)
         r="$(presse_papiers)"
-        if [[ "${r}" == *copie-test-4815* ]]; then ok "texte sélectionné + Ctrl+C : copié dans le presse-papiers (photo 12b)"
+        if [[ "${r}" == *copie-test-4815* ]]; then ok "texte sélectionné à la souris + Ctrl+C : copié dans le presse-papiers (photo 12b)"
         else ko "Ctrl+C n'a pas copié le texte sélectionné (presse-papiers : ${r:0:120})"; fi
         if [[ "${n}" == "${avant}" ]]; then ok "Ctrl+C sur du texte sélectionné n'arrête pas la commande"
         else ko "Ctrl+C sur du texte sélectionné a arrêté la commande (${avant} → ${n:-?})"; fi
@@ -635,6 +644,6 @@ konsole-etat)
     echo "${n:-0}" >/tmp/konsole-n
     ;;
 *)
-    echo "usage : verifier.sh demarrage|preparer|session|bienvenue|bienvenue-fermee|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|phase8|control-pages|systeme|systeme-bascule|applis|installateur-ouvrir|installateur-etat|installateur|installateur-boutique|installateur-windows|konsole-ouvrir|konsole-presse-papiers|konsole-etat ÉTAPE"; exit 2 ;;
+    echo "usage : verifier.sh demarrage|preparer|session|bienvenue|bienvenue-fermee|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|phase8|control-pages|systeme|systeme-bascule|applis|installateur-ouvrir|installateur-etat|installateur|installateur-boutique|installateur-windows|konsole-ouvrir|konsole-presse-papiers [TEXTE]|konsole-etat ÉTAPE"; exit 2 ;;
 esac
 exit $((erreurs > 0))
