@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Thomas OS : raccourcis de Konsole
+Comment=Une seule fois par compte : Ctrl+C copie et Ctrl+V colle dans Konsole, comme sur Windows
+Exec=/usr/libexec/thomas-konsole-raccourcis
+Icon=utilities-terminal
+OnlyShowIn=KDE;
+NoDisplay=true
+X-KDE-autostart-phase=2

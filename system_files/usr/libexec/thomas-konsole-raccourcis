@@ -1,0 +1,19 @@
+#!/usr/bin/bash
+# Thomas OS : Ctrl+C copie et Ctrl+V colle dans Konsole, comme sur Windows (Ctrl+Maj+C arrête la commande en cours).
+# Lancé à chaque ouverture de session, mais n'agit qu'une fois par compte. Si l'utilisateur a déjà ses propres
+# raccourcis Konsole (fichier présent), on n'y touche pas. Pour revenir aux raccourcis de KDE : Konsole → Configurer
+# les raccourcis → « Réinitialiser », ou supprimer ~/.local/share/kxmlgui5/konsole/sessionui.rc.
+set -euo pipefail
+donnees="${XDG_DATA_HOME:-${HOME}/.local/share}"
+config="${XDG_CONFIG_HOME:-${HOME}/.config}"
+fichier="${donnees}/kxmlgui5/konsole/sessionui.rc"
+fait="${config}/thomas-os/konsole-raccourcis-poses"
+[[ -e "${fait}" ]] && exit 0
+if [[ -e "${fichier}" ]]; then
+    echo "thomas-konsole-raccourcis : ${fichier} existe déjà (raccourcis choisis par l'utilisateur), rien changé"
+else
+    install -D -m 0644 /usr/share/thomas-os/konsole-sessionui.rc "${fichier}"
+    echo "thomas-konsole-raccourcis : Ctrl+C / Ctrl+V posés dans ${fichier}"
+fi
+mkdir -p "$(dirname "${fait}")"
+date -Iseconds >"${fait}"

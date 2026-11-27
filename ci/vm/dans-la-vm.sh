@@ -1,7 +1,7 @@
 #!/bin/bash
-# Lance « verifier.sh PHASE » dans la VM par SSH. Réessaie si c'est la connexion SSH elle-même qui échoue
-# (code 255, par exemple pendant la fin du démarrage), pas si une vérification échoue.
-phase="$1"
+# Lance « verifier.sh PHASE [ARGUMENT…] » dans la VM par SSH (arguments : des mots simples). Réessaie si c'est la
+# connexion SSH elle-même qui échoue (code 255, par exemple pendant la fin du démarrage), pas si une vérification échoue.
+phase="$*"
 for essai in 1 2 3 4 5 6; do
     # shellcheck disable=SC2086
     ${SSH} "MDP='${MDP}' bash -s ${phase}" <ci/vm/verifier.sh

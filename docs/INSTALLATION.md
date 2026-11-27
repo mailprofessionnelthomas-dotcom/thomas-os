@@ -100,6 +100,15 @@ Photos de ces écrans (prises en VM) : `captures/vm/mok-1-menu.png` à `mok-4-re
     - Epic Games : il installe **Heroic**, qui le remplace sous Linux ;
     - les autres `.exe` : il les lance avec Proton. Beaucoup marchent, pas tous. Les jeux avec anti-triche ne marchent jamais.
   - Pour un `.exe`, KDE demande d'abord « Lancer ce fichier ? » (sécurité, comme l'avertissement de Windows) : clique sur **Lancer**.
+- **Konsole (le terminal) :** comme sur Windows, **Ctrl+C** copie et **Ctrl+V** colle. Pour arrêter une commande : **Ctrl+Maj+C**.
+- **Claude sur Thomas OS :** l'appli Claude n'existe pas pour Thomas OS (sur Linux, seulement Ubuntu et Debian), mais **Claude Code** est déjà installé. La 1re fois, dans Konsole, tape ces deux commandes (elles récupèrent le projet et ses règles pour Claude, `CLAUDE.md`) :
+  ```
+  git clone https://github.com/mailprofessionnelthomas-dotcom/thomas-os ~/thomas-os
+  ```
+  ```
+  mkdir -p ~/.claude && { [ -e ~/.claude/CLAUDE.md ] || echo '@~/thomas-os/CLAUDE.md' > ~/.claude/CLAUDE.md; }
+  ```
+  Ensuite, à chaque fois : tape `claude`. La 1re fois, connecte-toi avec ton compte Claude et accepte qu'il lise `~/thomas-os/CLAUDE.md`. Ce n'est pas la même conversation que sur Windows : Claude repart des règles et de l'état du projet écrits dans ce fichier.
 - **Si quelque chose ne va pas :** Windows reste toujours accessible, par le menu de démarrage du PC (« Windows Boot Manager »).
 - **Changer de canal ou de version (carte graphique) :** Thomas Control → Système (mot de passe administrateur), puis redémarre. Photo : `captures/vm/control-systeme.png`.
 

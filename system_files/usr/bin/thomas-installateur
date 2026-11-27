@@ -79,6 +79,9 @@ CONNUS = [
     (r"\blibreoffice", "org.libreoffice.LibreOffice", "LibreOffice", ""),
     # déjà dans Thomas OS, inutile ou impossible sous Linux
     (r"\bvs ?code\b|visual studio code", None, "VS Code", "VS Code est déjà dans Thomas OS : menu → Visual Studio Code."),
+    (r"\bclaude\b", None, "Claude",
+     "L'appli Claude n'existe pas pour Thomas OS (sur Linux, seulement Ubuntu et Debian). Mais Claude Code est déjà "
+     "installé : ouvre Konsole, tape « claude » puis Entrée, et connecte-toi avec ton compte Claude."),
     (r"\b(amd ?software|adrenalin|radeon ?software|amd ?chipset)", None, "Pilote AMD",
      "Inutile : le pilote AMD est déjà dans Thomas OS et se met à jour avec le système."),
     (r"\b(nvidia|geforce)", None, "Pilote NVIDIA",
@@ -623,6 +626,8 @@ def verifier():
         "RobloxPlayerInstaller.exe": ("boutique", "org.vinegarhq.Sober"),
         "RobloxStudioInstaller.exe": ("boutique", "org.vinegarhq.Vinegar"),
         "VSCodeUserSetup-x64-1.95.3.exe": ("message", None),
+        "Claude Setup.exe": ("message", None),
+        "claude-desktop_1.0.0_amd64.deb": ("message", None),
         "FACEIT-setup.exe": ("message", None),
         "amd-software-adrenalin-edition-25.1.1.exe": ("message", None),
         "monjeu.exe": ("windows", None),

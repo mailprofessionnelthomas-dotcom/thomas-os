@@ -1,0 +1,11 @@
+<!DOCTYPE gui SYSTEM "kpartgui.dtd">
+<gui name="session" version="1">
+ <!-- Thomas OS : dans Konsole, Ctrl+C copie et Ctrl+V colle, comme sur Windows (demandé par Thomas le 2026-11-27).
+      Ctrl+Maj+C arrête la commande en cours (Konsole l'envoie au terminal comme un Ctrl+C).
+      Numéro 1 exprès, plus petit que celui de Konsole : KDE ajoute ces raccourcis à son propre fichier, puis
+      réécrit celui-ci en entier. Ensuite c'est un fichier de raccourcis normal, modifiable dans Konsole. -->
+ <ActionProperties scheme="Default">
+  <Action name="edit_copy" shortcut="Ctrl+C"/>
+  <Action name="edit_paste" shortcut="Ctrl+V; Ctrl+Shift+V; Shift+Ins"/>
+ </ActionProperties>
+</gui>

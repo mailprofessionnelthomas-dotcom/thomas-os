@@ -48,6 +48,14 @@ ouvre_installateur() {
     sleep 1
     return "${r}"
 }
+# raccourci FICHIER ACTION : le raccourci d'une action dans un fichier de raccourcis KDE (.rc), lu comme du XML
+# (l'ordre des attributs change quand KDE réécrit le fichier)
+raccourci() {
+    python3 -c 'import sys, xml.dom.minidom as m
+d = m.parse(sys.argv[1])
+print(next((a.getAttribute("shortcut") for a in d.getElementsByTagName("Action")
+            if a.getAttribute("name") == sys.argv[2] and a.hasAttribute("shortcut")), ""))' "$1" "$2" </dev/null 2>/dev/null
+}
 telechargements() {
     local d maison
     maison="$(getent passwd testeur | cut -d: -f6)"
@@ -538,7 +546,95 @@ installateur-windows)
     if [[ -n "${exe}" && -f "$(dirname "${exe}")/thomas-test-ok.txt" ]]; then ok "le raccourci du menu lance le programme Windows (il a écrit son fichier)"
     else ko "programme Windows pas lancé par son raccourci : $(tail -3 /tmp/lancer.log 2>/dev/null | tr '\n' ' ')"; fi
     ;;
+konsole-ouvrir)
+    # Konsole comme sur Windows : Ctrl+C copie, Ctrl+V colle, Ctrl+Maj+C arrête la commande. Un petit programme
+    # tourne dans Konsole et note ce qu'il reçoit ; les touches sont de vraies touches (QEMU sendkey).
+    maison="$(getent passwd testeur | cut -d: -f6)"
+    f="${maison}/.local/share/kxmlgui5/konsole/sessionui.rc"
+    d="${maison}/.cache/thomas-test-konsole"
+    pkill -u testeur -x dolphin; pkill -u testeur -x kdialog; pkill -u testeur -x konsole; sleep 1
+    loginctl unlock-sessions 2>/dev/null
+    if [[ "$(raccourci "${f}" edit_copy)" == Ctrl+C && "$(raccourci "${f}" edit_paste)" == Ctrl+V* ]]; then
+        ok "raccourcis Ctrl+C / Ctrl+V de Konsole posés à l'ouverture de session"
+    else ko "raccourcis de Konsole pas posés (${f})"; fi
+    clavier="$(comme_testeur kreadconfig6 --file kxkbrc --group Layout --key LayoutList </dev/null 2>/dev/null)"
+    [[ -n "${clavier}" ]] || clavier="$(localectl status 2>/dev/null | sed -nE 's/.*X11 Layout: *//p')"
+    info "clavier : ${clavier:-us}"
+    rm -rf "${d}" /tmp/konsole-n
+    cat >/tmp/konsole-test.py <<'EOF'
+import pathlib, signal, sys
+d = pathlib.Path.home() / ".cache/thomas-test-konsole"
+d.mkdir(parents=True, exist_ok=True)
+n = 0
+def interruption(signum, frame):
+    global n
+    n += 1
+    (d / "interruptions").write_text(str(n))
+signal.signal(signal.SIGINT, interruption)
+(d / "interruptions").write_text("0")
+print("copie-test-4815", flush=True)
+(d / "pret").write_text("oui")
+while True:
+    ligne = sys.stdin.readline()
+    if ligne:
+        with open(d / "lignes", "a") as sortie:
+            sortie.write(ligne)
+EOF
+    chmod 0644 /tmp/konsole-test.py
+    comme_testeur konsole -e python3 /tmp/konsole-test.py </dev/null >/tmp/konsole.log 2>&1 &
+    for _ in $(seq 20); do [[ -f "${d}/pret" ]] && break; sleep 1; done
+    if [[ -f "${d}/pret" ]]; then ok "Konsole ouvert avec le programme de test (photo 12a)"; else ko "Konsole pas ouvert : $(tail -3 /tmp/konsole.log | tr '\n' ' ')"; fi
+    echo 0 >/tmp/konsole-n
+    sleep 2
+    # KDE a repris nos raccourcis dans son propre fichier (plus récent) et réécrit le nôtre en entier
+    v="$(sed -nE 's/.*<gui [^>]*version="([0-9]+)".*/\1/p' "${f}" 2>/dev/null | head -1)"
+    if [[ "${v:-0}" -gt 1 && "$(raccourci "${f}" edit_copy)" == Ctrl+C ]] && grep -q '<Menu' "${f}"; then
+        ok "Konsole a repris Ctrl+C / Ctrl+V dans son propre fichier de raccourcis (n° ${v}, menus gardés)"
+    else ko "fichier de raccourcis pas repris par Konsole (n° ${v:-?})"; head -c 600 "${f}" 2>/dev/null | sed 's/^/INFO    /'; fi
+    ;;
+konsole-presse-papiers)
+    # met un texte dans le presse-papiers de la session (Klipper, sinon wl-copy)
+    comme_testeur gdbus call --session --dest org.kde.klipper --object-path /klipper \
+        --method org.kde.klipper.klipper.setClipboardContents 'colle-test-2342' </dev/null >/dev/null 2>&1 \
+        || { comme_testeur wl-copy 'colle-test-2342' </dev/null >/dev/null 2>&1 & sleep 1; }
+    sleep 1
+    ;;
+konsole-etat)
+    maison="$(getent passwd testeur | cut -d: -f6)"
+    d="${maison}/.cache/thomas-test-konsole"
+    n="$(cat "${d}/interruptions" 2>/dev/null)"
+    avant="$(cat /tmp/konsole-n 2>/dev/null)"
+    presse_papiers() {
+        comme_testeur gdbus call --session --dest org.kde.klipper --object-path /klipper \
+            --method org.kde.klipper.klipper.getClipboardContents </dev/null 2>/dev/null \
+            || comme_testeur timeout 5 wl-paste --no-newline </dev/null 2>/dev/null
+    }
+    case "${2:-}" in
+    ctrl-c-seul)
+        if [[ "${n}" == "$((avant + 1))" ]]; then info "Ctrl+C sans texte sélectionné : arrête la commande (comme sur Windows)"
+        else info "Ctrl+C sans texte sélectionné : n'arrête pas la commande (Konsole le garde pour Copier) ; pour arrêter : Ctrl+Maj+C"; fi
+        ;;
+    ctrl-maj-c)
+        if [[ "${n}" == "$((avant + 1))" ]]; then ok "Ctrl+Maj+C arrête la commande en cours (le programme a reçu l'interruption)"
+        else ko "Ctrl+Maj+C : pas d'interruption (${avant} → ${n:-?})"; fi
+        ;;
+    copie)
+        r="$(presse_papiers)"
+        if [[ "${r}" == *copie-test-4815* ]]; then ok "texte sélectionné + Ctrl+C : copié dans le presse-papiers (photo 12b)"
+        else ko "Ctrl+C n'a pas copié le texte sélectionné (presse-papiers : ${r:0:120})"; fi
+        if [[ "${n}" == "${avant}" ]]; then ok "Ctrl+C sur du texte sélectionné n'arrête pas la commande"
+        else ko "Ctrl+C sur du texte sélectionné a arrêté la commande (${avant} → ${n:-?})"; fi
+        ;;
+    colle)
+        if grep -q 'colle-test-2342' "${d}/lignes" 2>/dev/null; then ok "Ctrl+V colle le presse-papiers dans Konsole (photo 12c)"
+        else ko "Ctrl+V n'a pas collé (presse-papiers : $(presse_papiers | head -c 120) ; reçu : $(head -c 120 "${d}/lignes" 2>/dev/null))"; fi
+        pkill -u testeur -x konsole
+        ;;
+    *) ko "konsole-etat : étape inconnue « ${2:-} »" ;;
+    esac
+    echo "${n:-0}" >/tmp/konsole-n
+    ;;
 *)
-    echo "usage : verifier.sh demarrage|preparer|session|bienvenue|bienvenue-fermee|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|phase8|control-pages|systeme|systeme-bascule|applis|installateur-ouvrir|installateur-etat|installateur|installateur-boutique|installateur-windows"; exit 2 ;;
+    echo "usage : verifier.sh demarrage|preparer|session|bienvenue|bienvenue-fermee|situation|menu|avant-alt-espace|apres-alt-espace|core|control|studio|style-studio|annuler|phase8|control-pages|systeme|systeme-bascule|applis|installateur-ouvrir|installateur-etat|installateur|installateur-boutique|installateur-windows|konsole-ouvrir|konsole-presse-papiers|konsole-etat ÉTAPE"; exit 2 ;;
 esac
 exit $((erreurs > 0))

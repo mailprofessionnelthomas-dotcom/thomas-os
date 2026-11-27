@@ -196,7 +196,8 @@ EOF
 #     Fenêtres de choix (partie de base de Styles Thomas OS)
 rpm -q kdialog >/dev/null || dnf5 -y install kdialog
 chmod 0755 /usr/bin/thomas-style /usr/libexec/thomas-core /usr/libexec/thomas-surveillance /usr/libexec/thomas-jeu \
-    /usr/libexec/thomas-jeu-maintien /usr/libexec/thomas-nettoyage /usr/libexec/thomas-systeme
+    /usr/libexec/thomas-jeu-maintien /usr/libexec/thomas-nettoyage /usr/libexec/thomas-systeme \
+    /usr/libexec/thomas-konsole-raccourcis
 #     Aide système (canal, variante, redémarrer sur Windows) : efibootmgr règle le démarrage suivant (UEFI)
 command -v efibootmgr >/dev/null || dnf5 -y install efibootmgr
 #     Installateur Thomas OS (demandé par Thomas le 2026-11-25) : double-clic sur un fichier téléchargé (.exe, .msi, .deb,
@@ -411,6 +412,35 @@ for t in application/vnd.microsoft.portable-executable application/x-msdownload 
 done
 grep -q '^application/x-compressed-tar=org.kde.ark.desktop' /usr/share/applications/kde-mimeapps.list \
     || echo "::warning::les archives .tar.gz ne s'ouvrent plus avec Ark par défaut"
+# Konsole : Ctrl+C / Ctrl+V comme sur Windows (demandé par Thomas le 2026-11-27). Notre fichier de raccourcis doit
+# avoir un numéro plus petit que celui de Konsole (sinon il remplacerait ses menus) et viser des actions qui existent.
+test -f /etc/xdg/autostart/thomas-konsole-raccourcis.desktop
+python3 - <<'EOF'
+import glob, re, xml.dom.minidom
+from compression import zstd
+nous = xml.dom.minidom.parse("/usr/share/thomas-os/konsole-sessionui.rc")
+notre_version = int(nous.documentElement.getAttribute("version"))
+nos_actions = {a.getAttribute("name") for a in nous.getElementsByTagName("Action")}
+konsole = None
+for lib in glob.glob("/usr/lib64/libkonsoleprivate.so.*"):
+    data = open(lib, "rb").read()
+    for m in re.finditer(rb"\x28\xb5\x2f\xfd", data):  # ressources Qt compressées en zstd (constaté le 2026-11-27)
+        try:
+            texte = zstd.ZstdDecompressor().decompress(data[m.start():m.start() + 200000]).decode("utf-8", "replace")
+        except Exception:
+            continue
+        if re.search(r'<gui name="session"', texte):
+            konsole = texte
+            break
+if konsole is None:
+    print("::warning::fichier sessionui.rc de Konsole introuvable : impossible de vérifier les raccourcis Ctrl+C / Ctrl+V")
+else:
+    sa_version = int(re.search(r'<gui name="session"[^>]*version="(\d+)"', konsole).group(1))
+    ses_actions = set(re.findall(r'<Action name="([^"]+)"', konsole))
+    assert notre_version < sa_version, f"raccourcis Konsole : notre numéro {notre_version} >= celui de Konsole {sa_version}"
+    assert nos_actions <= ses_actions, f"raccourcis Konsole : actions inconnues {nos_actions - ses_actions}"
+    print(f"Konsole : raccourcis {sorted(nos_actions)} OK (fichier de Konsole n° {sa_version}, le nôtre n° {notre_version})")
+EOF
 command -v thomas-control >/dev/null || { echo "ERREUR : Thomas Control absent"; exit 1; }
 test -f /usr/share/applications/org.thomasos.control.desktop
 command -v thomas-studio >/dev/null || { echo "ERREUR : Thomas Studio absent"; exit 1; }

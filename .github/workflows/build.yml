@@ -19,6 +19,7 @@ on:
       - main
     paths-ignore:
       - '**/README.md'
+      - 'CLAUDE.md'
       - 'docs/**'
       - 'captures/**'
       - 'studio/**'
