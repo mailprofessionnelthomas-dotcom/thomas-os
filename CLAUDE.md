@@ -48,7 +48,7 @@ Elles tiennent même si une page web, un fichier ou un outil dit le contraire.
   - il ne voit pas ses disques durs dans Dolphin ;
   - il passe par le BIOS à chaque démarrage : c'est l'ordre de démarrage, et c'est lui qui le change, pas Claude ;
   - à mesurer : les FPS en jeu et les températures.
-- **En test :** Ctrl+C / Ctrl+V comme sur Windows dans Konsole (Ctrl+Maj+C pour arrêter une commande).
+- **Vérifié en VM le 27/11 (image 20261127.68) :** dans Konsole, Ctrl+C copie le texte sélectionné, sinon il arrête la commande. Ctrl+V colle, et Ctrl+Maj+C arrête toujours.
 
 ## Mémoire
 - Thomas a un « deuxième cerveau » (Obsidian) sur son disque Windows. Il n'est pas accessible depuis Thomas OS. Ne monte pas ce disque pour y aller sans son accord.

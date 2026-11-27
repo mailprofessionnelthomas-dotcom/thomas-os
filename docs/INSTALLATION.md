@@ -100,7 +100,12 @@ Photos de ces écrans (prises en VM) : `captures/vm/mok-1-menu.png` à `mok-4-re
     - Epic Games : il installe **Heroic**, qui le remplace sous Linux ;
     - les autres `.exe` : il les lance avec Proton. Beaucoup marchent, pas tous. Les jeux avec anti-triche ne marchent jamais.
   - Pour un `.exe`, KDE demande d'abord « Lancer ce fichier ? » (sécurité, comme l'avertissement de Windows) : clique sur **Lancer**.
-- **Konsole (le terminal) :** comme sur Windows, **Ctrl+C** copie et **Ctrl+V** colle. Pour arrêter une commande : **Ctrl+Maj+C**.
+- **Konsole (le terminal) :** comme sur Windows :
+  - texte sélectionné + **Ctrl+C** = copier ;
+  - **Ctrl+C** sans rien de sélectionné = arrêter la commande ;
+  - **Ctrl+V** = coller.
+
+  Si Ctrl+C n'arrête pas une commande, c'est qu'il reste du texte sélectionné : clique une fois dans le terminal, ou fais **Ctrl+Maj+C** (arrête toujours). Photos : `captures/vm/konsole-1-selection.png`, `konsole-2-colle.png`.
 - **Claude sur Thomas OS :** l'appli Claude n'existe pas pour Thomas OS (sur Linux, seulement Ubuntu et Debian), mais **Claude Code** est déjà installé. La 1re fois, dans Konsole, tape ces deux commandes (elles récupèrent le projet et ses règles pour Claude, `CLAUDE.md`) :
   ```
   git clone https://github.com/mailprofessionnelthomas-dotcom/thomas-os ~/thomas-os
